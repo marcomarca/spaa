@@ -1,0 +1,38 @@
+[project]
+name = "spaa"
+version = "0.1.0"
+description = "SPAA - Sistema Personal de Audiolibros y Aprendizaje Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiofiles>=25.1.0",
+    "fastapi>=0.141.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "python-multipart>=0.0.32",
+    "sqlalchemy>=2.0.52",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.5",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+
