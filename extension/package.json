@@ -1,13 +1,15 @@
 {
-  "name": "spaa-gemini-worker-extension",
-  "version": "0.1.0",
+  "name": "spaa-extension",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit"
+    "build": "bun run scripts/build.ts && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.306",
-    "typescript": "^5.7.3"
+    "@types/chrome": "^0.0.280",
+    "typescript": "^5.7.0"
   }
 }

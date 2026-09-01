@@ -14,11 +14,11 @@ export interface ClaimedJob {
 }
 
 export class WorkerClient {
-  private backendUrl: string;
-  private workerId: string;
-  private profileAlias: string;
+  public backendUrl: string;
+  public workerId: string;
+  public profileAlias: string;
 
-  constructor(backendUrl = "http://localhost:8000", workerId = "worker-chrome-1", profileAlias = "Perfil A") {
+  constructor(backendUrl = "http://localhost:8000", workerId = "worker-chrome-1", profileAlias = "Perfil 1") {
     this.backendUrl = backendUrl;
     this.workerId = workerId;
     this.profileAlias = profileAlias;
@@ -75,6 +75,32 @@ export class WorkerClient {
       return res.ok;
     } catch {
       return false;
+    }
+  }
+
+  async uploadBase64Audio(jobId: string, base64Audio: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Decode base64 to byte array
+      const binaryString = atob(base64Audio);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: "audio/wav" });
+
+      const formData = new FormData();
+      formData.append("worker_id", this.workerId);
+      formData.append("file", blob, `chunk_${jobId}.wav`);
+
+      const res = await fetch(`${this.backendUrl}/api/queue/upload-wav/${jobId}`, {
+        method: "POST",
+        body: formData,
+      });
+
+      return await res.json();
+    } catch (err) {
+      return { success: false, error: String(err) };
     }
   }
 

@@ -35,3 +35,6 @@ data/backups/
 Thumbs.db
 .vscode/
 .idea/
+
+# Large HTML snapshots
+*.example*.html

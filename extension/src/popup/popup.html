@@ -2,10 +2,10 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>SPAA Worker</title>
+  <title>SPAA Gemini Worker</title>
   <style>
     body {
-      width: 280px;
+      width: 320px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       margin: 0;
       padding: 16px;
@@ -17,21 +17,73 @@
       display: inline-block;
       padding: 4px 8px;
       border-radius: 9999px;
-      background: rgba(16, 185, 129, 0.2);
-      color: #34d399;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       font-weight: bold;
     }
-    .info-row { margin-top: 12px; font-size: 0.85rem; color: #94a3b8; }
+    .badge-active { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .badge-paused { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .info-card {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .form-group {
+      margin-top: 10px;
+    }
+    label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    .btn {
+      width: 100%;
+      margin-top: 12px;
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .btn-pause { background: #eab308; color: #0f172a; }
+    .btn-resume { background: #10b981; color: #ffffff; }
+    .btn-save { background: #3b82f6; color: #ffffff; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <h1>SPAA Gemini Worker</h1>
-  <div><span class="badge" id="worker-status">Activo / Conectado</span></div>
-  <div class="info-row">
-    <strong>Perfil:</strong> Perfil A<br>
-    <strong>Servidor:</strong> localhost:8000<br>
-    <strong>Modelo:</strong> gemini-2.5-pro-preview-tts
+  <h1>SPAA Gemini TTS Worker</h1>
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <span class="badge badge-active" id="status-badge">🟢 Activo</span>
+    <span style="font-size: 0.75rem; color: #94a3b8;" id="job-indicator">Idle</span>
   </div>
+
+  <div class="info-card">
+    <div class="form-group">
+      <label for="workerIdInput">Worker ID:</label>
+      <input type="text" id="workerIdInput" value="worker-chrome-1" />
+    </div>
+    <div class="form-group">
+      <label for="profileAliasInput">Perfil / Alias:</label>
+      <input type="text" id="profileAliasInput" value="Perfil 1" />
+    </div>
+    <div class="form-group">
+      <label for="backendUrlInput">Servidor SPAA:</label>
+      <input type="text" id="backendUrlInput" value="http://localhost:8000" />
+    </div>
+    <button class="btn btn-save" id="saveConfigBtn">Guardar Configuración</button>
+  </div>
+
+  <button class="btn btn-pause" id="togglePauseBtn">Pausar Worker</button>
+
+  <script src="popup.js"></script>
 </body>
 </html>

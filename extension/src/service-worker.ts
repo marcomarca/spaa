@@ -1,70 +1,132 @@
 import { type ClaimedJob, WorkerClient } from "./worker-client";
 
-const client = new WorkerClient();
+// Read worker settings from storage or defaults
+let workerId = "worker-chrome-1";
+let profileAlias = "Perfil 1";
+let backendUrl = "http://localhost:8000";
+let isPaused = false;
+
+chrome.storage.local.get(["workerId", "profileAlias", "backendUrl", "isPaused"], (res) => {
+  if (res.workerId) workerId = res.workerId;
+  if (res.profileAlias) profileAlias = res.profileAlias;
+  if (res.backendUrl) backendUrl = res.backendUrl;
+  if (typeof res.isPaused === "boolean") isPaused = res.isPaused;
+});
+
+const client = new WorkerClient(backendUrl, workerId, profileAlias);
 let currentJob: ClaimedJob | null = null;
-let isPolling = false;
+let isProcessing = false;
 
-console.log("[SPAA Service Worker] Initialized.");
+console.log(`[SPAA Service Worker] Initialized as ${workerId} (${profileAlias}).`);
 
-// Listen to download events to capture generated audio WAVs
-chrome.downloads.onChanged.addListener((delta) => {
-  if (delta.state && delta.state.current === "complete") {
-    console.log(`[SPAA Service Worker] Download complete for ID ${delta.id}`);
+// Listen for popup actions
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "GET_WORKER_STATUS") {
+    sendResponse({
+      workerId,
+      profileAlias,
+      backendUrl,
+      isPaused,
+      currentJob,
+      isProcessing,
+    });
+    return true;
+  }
+
+  if (message.type === "SET_PAUSED") {
+    isPaused = message.paused;
+    chrome.storage.local.set({ isPaused });
+    sendResponse({ success: true, isPaused });
+    return true;
+  }
+
+  if (message.type === "UPDATE_CONFIG") {
+    if (message.workerId) workerId = message.workerId;
+    if (message.profileAlias) profileAlias = message.profileAlias;
+    if (message.backendUrl) backendUrl = message.backendUrl;
+    client.workerId = workerId;
+    client.profileAlias = profileAlias;
+    client.backendUrl = backendUrl;
+    chrome.storage.local.set({ workerId, profileAlias, backendUrl });
+    sendResponse({ success: true });
+    return true;
   }
 });
 
-// Periodic heartbeat
+// Periodic heartbeat every 25 seconds
 setInterval(() => {
-  client.sendHeartbeat(currentJob ? "GENERATING" : "READY", currentJob?.job_id);
-}, 30000);
+  if (!isPaused) {
+    client.sendHeartbeat(currentJob ? "GENERATING" : "READY", currentJob?.job_id);
+  }
+}, 25000);
 
-export async function pollNextJob() {
-  if (isPolling || currentJob) return;
-  isPolling = true;
+// Polling loop every 4 seconds
+setInterval(async () => {
+  if (isPaused || isProcessing || currentJob) return;
 
   try {
-    const job = await client.claimNextJob();
-    if (job) {
-      console.log(`[SPAA Service Worker] Claimed job ${job.job_id} for chunk ${job.chunk_id}`);
-      currentJob = job;
-      await processJob(job);
-    }
+    await pollAndExecute();
   } catch (err) {
-    console.error("[SPAA Service Worker] Error polling job:", err);
-  } finally {
-    isPolling = false;
+    console.error("[SPAA Service Worker] Loop error:", err);
   }
-}
+}, 4000);
 
-async function processJob(job: ClaimedJob) {
-  // Query open AI Studio tab
+async function pollAndExecute() {
+  // Check if AI Studio tab exists
   const tabs = await chrome.tabs.query({ url: "*://aistudio.google.com/*" });
   if (tabs.length === 0 || !tabs[0].id) {
-    console.warn("[SPAA Service Worker] No AI Studio tab found. Waiting...");
-    await client.reportStatus(job.job_id, "ERROR", "No hay pestaña abierta de Gemini AI Studio");
-    currentJob = null;
-    return;
+    return; // No AI Studio tab open, stay idle
   }
 
   const tabId = tabs[0].id;
 
-  // 1. Inject text
-  chrome.tabs.sendMessage(tabId, { type: "INJECT_TEXT", text: job.spoken_text }, async (res) => {
-    if (!res?.success) {
-      await client.reportStatus(job.job_id, "ERROR", res?.error || "Fallo al insertar texto");
-      currentJob = null;
-      return;
-    }
-
-    // 2. Trigger generate
-    chrome.tabs.sendMessage(tabId, { type: "TRIGGER_GENERATE" }, async (genRes) => {
-      if (!genRes?.success) {
-        await client.reportStatus(job.job_id, "ERROR", genRes?.error || "Fallo al pulsar Generate");
-        currentJob = null;
-        return;
-      }
-
-      await client.reportStatus(job.job_id, "GENERATING");
+  // Verify tab is ready
+  const isReady = await new Promise<boolean>((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type: "CHECK_PAGE_READY" }, (res) => {
+      resolve(Boolean(res?.ready));
     });
   });
+
+  if (!isReady) return;
+
+  // Claim next job
+  isProcessing = true;
+  const job = await client.claimNextJob();
+  if (!job) {
+    isProcessing = false;
+    return;
+  }
+
+  console.log(`[SPAA Service Worker] Claimed job ${job.job_id} for chunk ${job.chunk_id} (seq ${job.sequence})`);
+  currentJob = job;
+
+  try {
+    // Send job to content script
+    const result = await new Promise<{ success: boolean; error?: string; base64_audio?: string }>((resolve) => {
+      chrome.tabs.sendMessage(tabId, { type: "EXECUTE_TTS_JOB", job }, (res) => {
+        resolve(res || { success: false, error: "Content script no respondió" });
+      });
+    });
+
+    if (!result.success || !result.base64_audio) {
+      console.error(`[SPAA Service Worker] Job ${job.job_id} failed:`, result.error);
+      await client.reportStatus(job.job_id, "ERROR", result.error || "Fallo en generación de audio");
+    } else {
+      console.log(`[SPAA Service Worker] Job ${job.job_id} synthesis complete. Uploading audio...`);
+      await client.reportStatus(job.job_id, "DOWNLOADING");
+
+      const uploadRes = await client.uploadBase64Audio(job.job_id, result.base64_audio);
+      if (uploadRes.success) {
+        console.log(`[SPAA Service Worker] Job ${job.job_id} successfully processed and QA validated!`);
+      } else {
+        console.error(`[SPAA Service Worker] QA validation failed for job ${job.job_id}:`, uploadRes.error);
+      }
+    }
+  } catch (err) {
+    console.error(`[SPAA Service Worker] Unhandled error in job ${job.job_id}:`, err);
+    await client.reportStatus(job.job_id, "ERROR", String(err));
+  } finally {
+    currentJob = null;
+    isProcessing = false;
+  }
 }
