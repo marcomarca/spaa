@@ -2,41 +2,146 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>SPAA Gemini Worker</title>
+  <title>SPAA Gemini Worker & Diagnostics</title>
   <style>
+    * { box-sizing: border-box; }
     body {
-      width: 320px;
+      width: 360px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       margin: 0;
-      padding: 16px;
+      padding: 14px;
       background: #0f172a;
       color: #f8fafc;
     }
-    h1 { font-size: 1rem; margin-top: 0; margin-bottom: 8px; color: #38bdf8; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    h1 { font-size: 0.95rem; margin: 0; color: #38bdf8; font-weight: 700; }
+    
     .badge {
-      display: inline-block;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border-radius: 9999px;
-      font-size: 0.75rem;
-      font-weight: bold;
+      font-size: 0.72rem;
+      font-weight: 600;
     }
     .badge-active { background: rgba(16, 185, 129, 0.2); color: #34d399; }
     .badge-paused { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-    .info-card {
+    .badge-danger { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+    /* Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
       background: #1e293b;
+      padding: 3px;
+      border-radius: 6px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 6px 10px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: #38bdf8;
+      color: #0f172a;
+    }
+
+    /* Cards */
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
       border-radius: 8px;
-      padding: 12px;
-      margin-top: 12px;
-      font-size: 0.85rem;
-      color: #cbd5e1;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-size: 0.82rem;
     }
-    .form-group {
-      margin-top: 10px;
+    .card-title {
+      font-weight: 700;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
     }
-    label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; }
+
+    /* Matrix */
+    .matrix-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 0.8rem;
+    }
+    .status-ok { color: #34d399; font-weight: 600; }
+    .status-warn { color: #fbbf24; font-weight: 600; }
+    .status-err { color: #f87171; font-weight: 600; }
+
+    /* Test Actions Grid */
+    .test-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .btn-test {
+      background: #334155;
+      border: 1px solid #475569;
+      color: #f8fafc;
+      padding: 7px 6px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+    .btn-test:hover {
+      background: #475569;
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+    .btn-test-primary {
+      background: #0284c7;
+      border-color: #38bdf8;
+      grid-column: span 2;
+    }
+    .btn-test-primary:hover {
+      background: #0369a1;
+      color: #ffffff;
+    }
+
+    /* Console Log */
+    .console-box {
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+      height: 90px;
+      overflow-y: auto;
+      color: #38bdf8;
+      white-space: pre-wrap;
+    }
+
+    /* Form */
+    .form-group { margin-bottom: 8px; }
+    label { display: block; font-size: 0.72rem; color: #94a3b8; margin-bottom: 3px; }
     input {
       width: 100%;
-      box-sizing: border-box;
       background: #0f172a;
       border: 1px solid #334155;
       color: #f8fafc;
@@ -46,43 +151,132 @@
     }
     .btn {
       width: 100%;
-      margin-top: 12px;
       padding: 8px;
       border: none;
       border-radius: 6px;
       font-weight: 600;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       cursor: pointer;
+      margin-top: 6px;
     }
+    .btn-save { background: #3b82f6; color: #ffffff; }
     .btn-pause { background: #eab308; color: #0f172a; }
     .btn-resume { background: #10b981; color: #ffffff; }
-    .btn-save { background: #3b82f6; color: #ffffff; margin-top: 8px; }
+
+    audio { width: 100%; margin-top: 6px; height: 32px; }
   </style>
 </head>
 <body>
-  <h1>SPAA Gemini TTS Worker</h1>
-  <div style="display: flex; justify-content: space-between; align-items: center;">
+  <header>
+    <h1>SPAA AI Studio Worker</h1>
     <span class="badge badge-active" id="status-badge">🟢 Activo</span>
-    <span style="font-size: 0.75rem; color: #94a3b8;" id="job-indicator">Idle</span>
+  </header>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-btn-tests">🧪 Pruebas en Caliente</button>
+    <button class="tab-btn" id="tab-btn-worker">⚙️ Worker & Config</button>
   </div>
 
-  <div class="info-card">
-    <div class="form-group">
-      <label for="workerIdInput">Worker ID:</label>
-      <input type="text" id="workerIdInput" value="worker-chrome-1" />
+  <!-- TAB 1: PRUEBAS EN CALIENTE -->
+  <div id="tab-content-tests">
+    <div class="card">
+      <div class="card-title">🔍 Diagnóstico del DOM (AI Studio)</div>
+      <div class="matrix-row">
+        <span>Pestaña AI Studio:</span>
+        <span id="diag-tab" class="status-warn">Comprobando...</span>
+      </div>
+      <div class="matrix-row">
+        <span>Modelo detectado:</span>
+        <span id="diag-model" style="color: #cbd5e1;">-</span>
+      </div>
+      <div class="matrix-row">
+        <span>Voz detectada:</span>
+        <span id="diag-voice" style="color: #cbd5e1;">-</span>
+      </div>
+      <div class="matrix-row">
+        <span>Textarea Prompt:</span>
+        <span id="diag-prompt" class="status-err">No</span>
+      </div>
+      <div class="matrix-row">
+        <span>Textarea Escena / Contexto:</span>
+        <span id="diag-scene-ctx" class="status-err">No</span>
+      </div>
+      <div class="matrix-row">
+        <span>Botón 'Run':</span>
+        <span id="diag-run" class="status-err">No</span>
+      </div>
+      <div class="matrix-row">
+        <span>Audio en Reproductor:</span>
+        <span id="diag-player" class="status-err">Sin audio</span>
+      </div>
     </div>
-    <div class="form-group">
-      <label for="profileAliasInput">Perfil / Alias:</label>
-      <input type="text" id="profileAliasInput" value="Perfil 1" />
+
+    <div class="card">
+      <div class="card-title">⚡ Acciones de Prueba en Caliente</div>
+      <div class="test-grid">
+        <button class="btn-test btn-test-primary" id="btn-test-highlight">
+          🎯 Resaltar Elementos en Pantalla
+        </button>
+        <button class="btn-test" id="btn-test-mode">
+          🔀 Alternar Modo Text
+        </button>
+        <button class="btn-test" id="btn-test-scene">
+          🎭 Inyectar Escena
+        </button>
+        <button class="btn-test" id="btn-test-context">
+          📖 Inyectar Contexto
+        </button>
+        <button class="btn-test" id="btn-test-prompt">
+          ✍️ Inyectar Texto
+        </button>
+        <button class="btn-test" id="btn-test-run">
+          ▶️ Clic en 'Run'
+        </button>
+        <button class="btn-test" id="btn-test-audio">
+          🎧 Extraer Audio
+        </button>
+      </div>
+
+      <div id="audio-preview-container" style="display: none; margin-top: 8px;">
+        <div style="font-size: 0.75rem; color: #34d399; font-weight: 600;" id="audio-meta">Audio capturado:</div>
+        <audio id="popup-audio-player" controls></audio>
+      </div>
     </div>
-    <div class="form-group">
-      <label for="backendUrlInput">Servidor SPAA:</label>
-      <input type="text" id="backendUrlInput" value="http://localhost:8000" />
+
+    <div class="card">
+      <div class="card-title">📟 Registro de Pruebas</div>
+      <div class="console-box" id="test-console">Listo para pruebas en caliente.</div>
     </div>
-    <button class="btn btn-save" id="saveConfigBtn">Guardar Configuración</button>
   </div>
 
-  <button class="btn btn-pause" id="togglePauseBtn">Pausar Worker</button>
+  <!-- TAB 2: CONFIGURACIÓN & WORKER -->
+  <div id="tab-content-worker" style="display: none;">
+    <div class="card">
+      <div class="card-title">Configuración del Worker</div>
+      <div class="form-group">
+        <label for="workerIdInput">Worker ID:</label>
+        <input type="text" id="workerIdInput" value="worker-chrome-1" />
+      </div>
+      <div class="form-group">
+        <label for="profileAliasInput">Perfil / Alias:</label>
+        <input type="text" id="profileAliasInput" value="Perfil 1" />
+      </div>
+      <div class="form-group">
+        <label for="backendUrlInput">Servidor SPAA:</label>
+        <input type="text" id="backendUrlInput" value="http://localhost:8000" />
+      </div>
+      <button class="btn btn-save" id="saveConfigBtn">Guardar Configuración</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Control de Cola</div>
+      <div class="matrix-row">
+        <span>Estado actual:</span>
+        <span id="job-indicator" style="color: #38bdf8; font-weight: 600;">Idle</span>
+      </div>
+      <button class="btn btn-pause" id="togglePauseBtn">Pausar Worker</button>
+    </div>
+  </div>
 
   <script src="popup.js"></script>
 </body>

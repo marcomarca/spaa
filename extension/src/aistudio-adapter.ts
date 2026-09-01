@@ -28,6 +28,31 @@ export class AIStudioAdapter {
   }
 
   /**
+   * Toggles between Text and Composer modes.
+   */
+  static toggleMode(targetMode?: "TEXT" | "COMPOSER"): string {
+    const textBtn = document.querySelector('ms-button-toggle button[data-value="TEXT"]') as HTMLButtonElement | null;
+    const composerBtn = document.querySelector('ms-button-toggle button[data-value="COMPOSER"]') as HTMLButtonElement | null;
+
+    if (targetMode === "TEXT") {
+      textBtn?.click();
+      return "TEXT";
+    }
+    if (targetMode === "COMPOSER") {
+      composerBtn?.click();
+      return "COMPOSER";
+    }
+
+    // Toggle current
+    if (textBtn?.getAttribute("aria-checked") === "true") {
+      composerBtn?.click();
+      return "COMPOSER";
+    }
+    textBtn?.click();
+    return "TEXT";
+  }
+
+  /**
    * Locates the main spoken text prompt input.
    */
   static findTextInput(): HTMLTextAreaElement | null {
@@ -57,6 +82,36 @@ export class AIStudioAdapter {
   }
 
   /**
+   * Locates the 'Scene' textarea.
+   */
+  static findSceneInput(): HTMLTextAreaElement | null {
+    return document.querySelector('textarea[aria-label="Scene"], ms-autosize-textarea[arialabel="Scene"] textarea') as HTMLTextAreaElement | null;
+  }
+
+  /**
+   * Locates the 'Sample Context' textarea.
+   */
+  static findSampleContextInput(): HTMLTextAreaElement | null {
+    return document.querySelector(
+      'textarea[aria-label="Sample Context"], ms-autosize-textarea[arialabel="Sample Context"] textarea'
+    ) as HTMLTextAreaElement | null;
+  }
+
+  /**
+   * Locates the Model Selector button card.
+   */
+  static findModelSelector(): HTMLElement | null {
+    return document.querySelector("ms-model-selector button.model-selector-card, ms-model-selector") as HTMLElement | null;
+  }
+
+  /**
+   * Locates the Voice Settings trigger.
+   */
+  static findVoiceSelector(): HTMLElement | null {
+    return document.querySelector("ms-voice-settings .active-voice-card-trigger, ms-voice-settings") as HTMLElement | null;
+  }
+
+  /**
    * Injects prompt text simulating real user typing so Angular form controls update.
    */
   static setPromptText(element: HTMLTextAreaElement, text: string): boolean {
@@ -71,7 +126,7 @@ export class AIStudioAdapter {
         element.value = text;
       }
 
-      // Dispatch input and change events
+      // Dispatch events for Angular form bindings
       element.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
       element.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
       element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
@@ -142,13 +197,11 @@ export class AIStudioAdapter {
    * Locates the Download button in the player footer.
    */
   static findDownloadButton(): HTMLButtonElement | null {
-    // 1. Download button by aria-label inside ms-music-player
     const dlBtn = document.querySelector(
       'ms-music-player button[aria-label="Download"], ms-music-player button.download-button'
     ) as HTMLButtonElement | null;
     if (dlBtn) return dlBtn;
 
-    // 2. Any button with download-button class
     const anyDl = document.querySelector("button.download-button, button[aria-label*='Download' i]") as HTMLButtonElement | null;
     return anyDl;
   }
@@ -160,11 +213,10 @@ export class AIStudioAdapter {
     const runBtn = AIStudioAdapter.findRunButton();
     if (!runBtn) return false;
 
-    // Check if Run button is busy or disabled while generating
     const isBusy = runBtn.getAttribute("aria-busy") === "true" || runBtn.closest("ms-run-button")?.classList.contains("generating");
     const hasSpinner = runBtn.querySelector(".mat-mdc-progress-spinner, mat-spinner") !== null;
 
-    return isBusy || hasSpinner;
+    return Boolean(isBusy || hasSpinner);
   }
 
   /**
@@ -203,5 +255,93 @@ export class AIStudioAdapter {
   static getSelectedVoice(): string | null {
     const voiceEl = document.querySelector(".voice-display-name");
     return voiceEl?.textContent?.trim() || null;
+  }
+
+  /**
+   * Draws a visible neon highlight and floating tooltip around an element on AI Studio page.
+   */
+  static highlightElement(element: HTMLElement | null, labelText: string, color = "#38bdf8"): void {
+    if (!element) return;
+
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    const originalOutline = element.style.outline;
+    const originalShadow = element.style.boxShadow;
+    const originalTransition = element.style.transition;
+
+    element.style.transition = "all 0.3s ease";
+    element.style.outline = `3px solid ${color}`;
+    element.style.boxShadow = `0 0 20px ${color}`;
+
+    // Create floating badge
+    const badge = document.createElement("div");
+    badge.className = "spaa-test-badge";
+    badge.textContent = `🎯 ${labelText}`;
+    badge.style.position = "absolute";
+    badge.style.zIndex = "99999999";
+    badge.style.background = color;
+    badge.style.color = "#0f172a";
+    badge.style.fontWeight = "bold";
+    badge.style.fontSize = "12px";
+    badge.style.padding = "4px 8px";
+    badge.style.borderRadius = "4px";
+    badge.style.boxShadow = "0 4px 10px rgba(0,0,0,0.5)";
+    badge.style.pointerEvents = "none";
+
+    const rect = element.getBoundingClientRect();
+    badge.style.left = `${window.scrollX + rect.left}px`;
+    badge.style.top = `${Math.max(0, window.scrollY + rect.top - 28)}px`;
+
+    document.body.appendChild(badge);
+
+    setTimeout(() => {
+      element.style.outline = originalOutline;
+      element.style.boxShadow = originalShadow;
+      element.style.transition = originalTransition;
+      badge.remove();
+    }, 4000);
+  }
+
+  /**
+   * Runs comprehensive diagnostics on all required AI Studio elements.
+   */
+  static diagnoseDOM() {
+    const isPage = AIStudioAdapter.isAIStudioPage();
+    const textInput = AIStudioAdapter.findTextInput();
+    const sceneInput = AIStudioAdapter.findSceneInput();
+    const sampleContextInput = AIStudioAdapter.findSampleContextInput();
+    const runBtn = AIStudioAdapter.findRunButton();
+    const isRunReady = AIStudioAdapter.isRunButtonReady();
+    const modelSelector = AIStudioAdapter.findModelSelector();
+    const voiceSelector = AIStudioAdapter.findVoiceSelector();
+    const player = document.querySelector("ms-music-player");
+    const audioSrc = AIStudioAdapter.getGeneratedAudioSrc();
+    const dlBtn = AIStudioAdapter.findDownloadButton();
+    const selectedModel = AIStudioAdapter.getSelectedModel();
+    const selectedVoice = AIStudioAdapter.getSelectedVoice();
+
+    return {
+      isPage,
+      elements: {
+        textPromptInput: Boolean(textInput),
+        sceneInput: Boolean(sceneInput),
+        sampleContextInput: Boolean(sampleContextInput),
+        runButton: Boolean(runBtn),
+        isRunReady,
+        modelSelector: Boolean(modelSelector),
+        voiceSelector: Boolean(voiceSelector),
+        playerDetected: Boolean(player),
+        hasGeneratedAudio: Boolean(audioSrc),
+        downloadButton: Boolean(dlBtn),
+      },
+      values: {
+        selectedModel: selectedModel || "No detectado",
+        selectedVoice: selectedVoice || "No detectado",
+        textPromptValue: textInput?.value || "",
+        sceneValue: sceneInput?.value || "",
+        sampleContextValue: sampleContextInput?.value || "",
+        hasAudioData: Boolean(audioSrc),
+      },
+    };
   }
 }
