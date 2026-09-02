@@ -9,12 +9,18 @@ function getOrCreateHUD(): HTMLElement {
 
   hudElement = document.createElement("div");
   hudElement.id = "spaa-worker-live-hud";
+
+  // Position from localStorage or default top-right to never block Run button
+  const savedLeft = localStorage.getItem("spaa_hud_left");
+  const savedTop = localStorage.getItem("spaa_hud_top");
+  const isSavedMin = localStorage.getItem("spaa_hud_minimized") === "true";
+
   hudElement.style.cssText = `
     position: fixed;
-    bottom: 16px;
-    right: 16px;
+    ${savedLeft ? `left: ${savedLeft}px;` : "right: 24px;"}
+    ${savedTop ? `top: ${savedTop}px;` : "top: 24px;"}
     width: 360px;
-    max-width: 90vw;
+    max-width: 92vw;
     background: rgba(15, 23, 42, 0.96);
     backdrop-filter: blur(12px);
     border: 1px solid #38bdf8;
@@ -26,69 +32,138 @@ function getOrCreateHUD(): HTMLElement {
     z-index: 9999999;
     padding: 12px 14px;
     box-sizing: border-box;
-    transition: all 0.2s ease;
+    user-select: none;
+    transition: box-shadow 0.2s ease;
   `;
 
   hudElement.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #334155; padding-bottom:6px;">
-      <div style="font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:6px;">
+    <div id="spaa-hud-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #334155; padding-bottom:6px; cursor:grab;">
+      <div style="font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:6px; pointer-events:none;">
         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;" id="spaa-hud-dot"></span>
-        SPAA TTS Worker Live
+        <span id="spaa-hud-title">SPAA TTS Worker Live</span>
       </div>
-      <button id="spaa-hud-toggle" type="button" style="background:transparent; border:1px solid #475569; border-radius:4px; color:#cbd5e1; cursor:pointer; font-size:11px; padding:2px 6px;">
-        Minimizar
-      </button>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span style="font-size:11px; color:#64748b; cursor:grab;" title="Arrastra desde aquí">⋮⋮ Mover</span>
+        <button id="spaa-hud-toggle" type="button" style="background:#1e293b; border:1px solid #475569; border-radius:4px; color:#cbd5e1; cursor:pointer; font-size:11px; padding:2px 8px;">
+          ${isSavedMin ? "Expandir" : "Minimizar"}
+        </button>
+      </div>
     </div>
-    <div id="spaa-hud-status" style="font-weight:600; color:#facc15; margin-bottom:4px; font-size:12px;">
-      🟢 IDLE (Esperando Tareas)
-    </div>
-    <div id="spaa-hud-details" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">
-      Servidor: Conectado | AI Studio: Listo
-    </div>
-    <div id="spaa-hud-logbox" style="background:#020617; border-radius:6px; padding:8px; font-family:monospace; font-size:10.5px; max-height:110px; overflow-y:auto; color:#cbd5e1; border:1px solid #1e293b;">
-      <div style="color:#64748b;">[Iniciando] Monitor en vivo activado...</div>
+    <div id="spaa-hud-body">
+      <div id="spaa-hud-status" style="font-weight:600; color:#facc15; margin-bottom:4px; font-size:12px;">
+        🟢 IDLE (Esperando Tareas)
+      </div>
+      <div id="spaa-hud-details" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">
+        Servidor: Conectado | AI Studio: Listo
+      </div>
+      <div id="spaa-hud-logbox" style="background:#020617; border-radius:6px; padding:8px; font-family:monospace; font-size:10.5px; max-height:110px; overflow-y:auto; color:#cbd5e1; border:1px solid #1e293b; user-select:text;">
+        <div style="color:#64748b;">[Iniciando] Monitor en vivo activado...</div>
+      </div>
     </div>
   `;
 
   document.body.appendChild(hudElement);
 
+  // Setup Dragging
+  const header = hudElement.querySelector("#spaa-hud-header") as HTMLElement;
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let initialLeft = 0;
+  let initialTop = 0;
+
+  header.onmousedown = (e) => {
+    if ((e.target as HTMLElement).tagName === "BUTTON") return;
+    isDragging = true;
+    header.style.cursor = "grabbing";
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = hudElement!.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+
+    hudElement!.style.right = "auto";
+    hudElement!.style.bottom = "auto";
+    hudElement!.style.left = `${initialLeft}px`;
+    hudElement!.style.top = `${initialTop}px`;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDragging) return;
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const newLeft = Math.max(10, Math.min(window.innerWidth - hudElement!.offsetWidth - 10, initialLeft + dx));
+      const newTop = Math.max(10, Math.min(window.innerHeight - hudElement!.offsetHeight - 10, initialTop + dy));
+      hudElement!.style.left = `${newLeft}px`;
+      hudElement!.style.top = `${newTop}px`;
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+      header.style.cursor = "grab";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      localStorage.setItem("spaa_hud_left", String(parseInt(hudElement!.style.left, 10)));
+      localStorage.setItem("spaa_hud_top", String(parseInt(hudElement!.style.top, 10)));
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  // Setup Toggle
   const toggleBtn = hudElement.querySelector("#spaa-hud-toggle") as HTMLButtonElement;
-  let minimized = false;
+  const hudBody = hudElement.querySelector("#spaa-hud-body") as HTMLElement;
+
+  const applyMinimize = (min: boolean) => {
+    if (min) {
+      hudBody.style.display = "none";
+      hudElement!.style.width = "auto";
+      hudElement!.style.padding = "6px 12px";
+      toggleBtn.innerText = "Expandir";
+    } else {
+      hudBody.style.display = "block";
+      hudElement!.style.width = "360px";
+      hudElement!.style.padding = "12px 14px";
+      toggleBtn.innerText = "Minimizar";
+    }
+  };
+
+  if (isSavedMin) {
+    applyMinimize(true);
+  }
+
+  let minimized = isSavedMin;
   toggleBtn.onclick = (e) => {
     e.stopPropagation();
     minimized = !minimized;
-    const logbox = hudElement!.querySelector("#spaa-hud-logbox") as HTMLElement;
-    const details = hudElement!.querySelector("#spaa-hud-details") as HTMLElement;
-    if (minimized) {
-      logbox.style.display = "none";
-      details.style.display = "none";
-      toggleBtn.innerText = "Expandir";
-    } else {
-      logbox.style.display = "block";
-      details.style.display = "block";
-      toggleBtn.innerText = "Minimizar";
-    }
+    localStorage.setItem("spaa_hud_minimized", String(minimized));
+    applyMinimize(minimized);
   };
 
   return hudElement;
 }
 
-export function updateHUD(statusText: string, detailsText?: string, logMsg?: string, dotColor = "#22c55e") {
+function updateHUD(statusText: string, detailsText?: string, logMsg?: string, dotColor = "#22c55e") {
   try {
     const hud = getOrCreateHUD();
     const statusEl = hud.querySelector("#spaa-hud-status") as HTMLElement;
     const detailsEl = hud.querySelector("#spaa-hud-details") as HTMLElement;
     const dotEl = hud.querySelector("#spaa-hud-dot") as HTMLElement;
     const logbox = hud.querySelector("#spaa-hud-logbox") as HTMLElement;
+    const titleEl = hud.querySelector("#spaa-hud-title") as HTMLElement;
 
     if (statusEl) statusEl.innerText = statusText;
     if (detailsEl && detailsText) detailsEl.innerText = detailsText;
     if (dotEl) dotEl.style.background = dotColor;
+    if (titleEl) {
+      const cleanStatus = statusText.replace(/^[🟢🟡⚡📥☁️🔴🟣\s]+/, "");
+      titleEl.innerText = `SPAA: ${cleanStatus.slice(0, 24)}`;
+    }
 
     if (logMsg) {
       const time = new Date().toLocaleTimeString();
       hudLogs.push(`[${time}] ${logMsg}`);
-      if (hudLogs.length > 25) hudLogs.shift();
+      if (hudLogs.length > 30) hudLogs.shift();
       if (logbox) {
         logbox.innerHTML = hudLogs.map((l) => `<div style="margin-bottom:3px; line-height:1.3;">${l}</div>`).join("");
         logbox.scrollTop = logbox.scrollHeight;
@@ -171,10 +246,11 @@ window.addEventListener("unhandledrejection", (event) => {
 if (!(window as any).__SPAA_CONTENT_SCRIPT_INITIALIZED__) {
   (window as any).__SPAA_CONTENT_SCRIPT_INITIALIZED__ = true;
 
-  // Initialize HUD
+  // Initialize HUD & Auto-Open Speech Editor
   setTimeout(() => {
     if (AIStudioAdapter.isAIStudioPage()) {
       getOrCreateHUD();
+      AIStudioAdapter.ensureSpeechEditorInitialized();
       updateHUD("🟢 LISTO / IDLE", "Pestaña AI Studio conectada", "Extensión iniciada en pestaña AI Studio");
     }
   }, 500);
@@ -356,8 +432,11 @@ if (!(window as any).__SPAA_CONTENT_SCRIPT_INITIALIZED__) {
 
       // 8. Regular Production Automation Execution
       if (message.type === "CHECK_PAGE_READY") {
+        AIStudioAdapter.ensureSpeechEditorInitialized();
         AIStudioAdapter.ensureTextMode();
-        const isReady = AIStudioAdapter.isAIStudioPage() && AIStudioAdapter.findTextInput() !== null;
+        const isReady =
+          AIStudioAdapter.isAIStudioPage() &&
+          (AIStudioAdapter.findTextInput() !== null || AIStudioAdapter.ensureSpeechEditorInitialized());
         const model = AIStudioAdapter.getSelectedModel();
         const voice = AIStudioAdapter.getSelectedVoice();
         sendResponse({ ready: isReady, model, voice });
@@ -399,7 +478,11 @@ async function executeJob(job: {
   console.log(`[SPAA Content Script] Starting TTS generation for job ${job.job_id}...`);
   updateHUD("🟡 PREPARANDO JOB", `Job #${shortId} (${wordCount} palabras)`, `Iniciando procesamiento de Chunk #${shortId}...`, "#f59e0b");
 
-  // 1. If currently generating from a previous action, wait for it to settle
+  // 1. Auto-open Speech Editor if in landing/template state
+  AIStudioAdapter.ensureSpeechEditorInitialized();
+  await sleep(350);
+
+  // 2. If currently generating from a previous action, wait for it to settle
   let waitGen = 0;
   while (AIStudioAdapter.isGenerating() && waitGen < 30) {
     updateHUD("⏳ ESPERANDO SÍNTESIS PREVIA", `Job #${shortId}`, "Esperando que AI Studio termine la generación anterior...", "#f59e0b");
@@ -407,17 +490,20 @@ async function executeJob(job: {
     waitGen++;
   }
 
-  // 2. Dismiss any existing error toast/banner
+  // 3. Dismiss any existing error toast/banner
   AIStudioAdapter.dismissErrorBanners();
   await sleep(200);
 
+  AIStudioAdapter.ensureSpeechEditorInitialized();
   AIStudioAdapter.ensureTextMode();
   await sleep(250);
 
   let input = AIStudioAdapter.findTextInput();
   let retries = 0;
-  while (!input && retries < 10) {
-    await sleep(500);
+  while (!input && retries < 12) {
+    AIStudioAdapter.ensureSpeechEditorInitialized();
+    AIStudioAdapter.ensureTextMode();
+    await sleep(400);
     input = AIStudioAdapter.findTextInput();
     retries++;
   }
@@ -463,12 +549,30 @@ async function executeJob(job: {
 
   AIStudioAdapter.highlightElement(runBtn, "Ejecutando...", "#10b981");
   updateHUD("⚡ ENVIANDO RUN ↵", `Job #${shortId}`, "Pulsando botón Run / Ctrl+Enter...", "#38bdf8");
-  const clicked = AIStudioAdapter.clickRun();
-  console.log(`[SPAA Content Script] 'Run' trigger executed (success: ${clicked}). Waiting for audio synthesis...`);
+  AIStudioAdapter.clickRun();
+
+  // Closed-loop check: verify if AI Studio transitioned to generating (Stop) state
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await sleep(1500);
+
+    if (AIStudioAdapter.isGenerating()) {
+      break;
+    }
+
+    const immediateErr = AIStudioAdapter.readVisibleError();
+    if (immediateErr) {
+      console.warn(`[SPAA Content Script] Detected error immediately on Run attempt ${attempt + 1}: ${immediateErr}`);
+      break;
+    }
+
+    console.log(`[SPAA Content Script] Generation did not start yet, re-dispatching Run (attempt ${attempt + 2})...`);
+    AIStudioAdapter.clickRun();
+  }
 
   const startTime = Date.now();
   const TIMEOUT_MS = 150000;
   let loggedGenerating = false;
+  let retryCount = 0;
 
   while (Date.now() - startTime < TIMEOUT_MS) {
     await sleep(1000);
@@ -481,9 +585,43 @@ async function executeJob(job: {
 
     const visibleError = AIStudioAdapter.readVisibleError();
     if (visibleError && !visibleError.includes("API key")) {
+      console.warn(`[SPAA Content Script] Detected AI Studio Error Banner: ${visibleError}`);
+      const isRateLimit =
+        visibleError.includes("403") ||
+        visibleError.includes("429") ||
+        visibleError.includes("Quota") ||
+        visibleError.includes("Http response at 400 or 500");
+
       AIStudioAdapter.dismissErrorBanners();
-      updateHUD("🔴 ERROR AI STUDIO", `Job #${shortId}`, `Error: ${visibleError}`, "#ef4444");
-      return { success: false, error: `Error visible en AI Studio: ${visibleError}` };
+
+      if (isRateLimit && retryCount < 3) {
+        retryCount++;
+        // Auto-Recovery Protocol: 12-second backoff with live countdown
+        for (let cd = 12; cd > 0; cd--) {
+          updateHUD(
+            "🟠 ESPERA ANTI-RATE LIMIT",
+            `Job #${shortId} (Reintento ${retryCount}/3 en ${cd}s)`,
+            `Error 403/429 de AI Studio. Esperando ${cd}s para reintentar...`,
+            "#f59e0b"
+          );
+          await sleep(1000);
+        }
+        AIStudioAdapter.dismissErrorBanners();
+        await sleep(500);
+
+        // Re-inject text if needed and re-trigger Run
+        const currentInput = AIStudioAdapter.findTextInput();
+        if (currentInput) {
+          AIStudioAdapter.setPromptText(currentInput, job.spoken_text);
+        }
+        updateHUD("⚡ REINTENTANDO RUN", `Job #${shortId} (Intento ${retryCount + 1})`, "Reintentando enviar Run...", "#38bdf8");
+        AIStudioAdapter.clickRun();
+        loggedGenerating = false;
+        continue;
+      } else {
+        updateHUD("🔴 ERROR AI STUDIO", `Job #${shortId}`, `Error: ${visibleError}`, "#ef4444");
+        return { success: false, error: `Error visible en AI Studio: ${visibleError}` };
+      }
     }
 
     const audioSrc = AIStudioAdapter.getGeneratedAudioSrc();
@@ -520,6 +658,13 @@ async function executeJob(job: {
       if (dlBtn) dlBtn.click();
 
       updateHUD("☁️ SUBIENDO AL SERVIDOR", `Job #${shortId}`, "Subiendo WAV a localhost:8009...", "#38bdf8");
+
+      // 5-second post-generation cooldown before starting the next chunk
+      for (let cd = 5; cd > 0; cd--) {
+        updateHUD("⏳ ENFRIAMIENTO", `Job #${shortId} guardado (${cd}s)`, `Pausa de seguridad anti-rate-limit (${cd}s)...`, "#38bdf8");
+        await sleep(1000);
+      }
+
       return {
         success: true,
         job_id: job.job_id,

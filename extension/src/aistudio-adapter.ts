@@ -19,7 +19,7 @@ export class AIStudioAdapter {
   }
 
   /**
-   * Dismisses any error toast or banner by clicking its close (X) button.
+   * Dismisses any error toast, snackbar, or banner by clicking its close (X) button.
    * STRICT: NEVER touches navigation, 'Get code', or API key buttons.
    */
   static dismissErrorBanners(): void {
@@ -35,9 +35,9 @@ export class AIStudioAdapter {
       }
     }
 
-    // Dismiss only error banners strictly inside notification containers
+    // Dismiss snackbars / banners inside notification containers
     const bannerCloseBtns = document.querySelectorAll<HTMLButtonElement>(
-      "ms-global-banner button, .mat-mdc-snack-bar-container button, ms-notification-banner button[aria-label*='Close' i]"
+      "ms-global-banner button, .mat-mdc-snack-bar-container button, ms-notification-banner button, .main-content ~ .actions button, .main-content button, [role='alert'] button, ms-banner button, .snackbar-actions button"
     );
     for (const b of bannerCloseBtns) {
       try {
@@ -46,6 +46,86 @@ export class AIStudioAdapter {
         // Ignore
       }
     }
+  }
+
+  /**
+   * Calculates the exact center viewport coordinates of an element for CDP hardware clicks.
+   */
+  static getElementCenterCoords(element: HTMLElement | null): { x: number; y: number } | null {
+    if (!element) return null;
+    try {
+      element.scrollIntoView({ behavior: "instant", block: "center", inline: "center" });
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  /**
+   * Performs a multi-tiered trusted click (DOM Pointer Sequence + CDP Hardware Mouse Click).
+   */
+  static triggerTrustedClick(element: HTMLElement | null): boolean {
+    if (!element) return false;
+
+    // 1. In-DOM Pointer Sequence
+    try {
+      element.focus();
+      element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+      element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+      element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
+      element.click();
+    } catch {
+      // ignore
+    }
+
+    // 2. CDP Hardware Mouse Click via Service Worker
+    const coords = AIStudioAdapter.getElementCenterCoords(element);
+    if (coords && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      try {
+        chrome.runtime.sendMessage({ type: "CDP_TRUSTED_CLICK", coords });
+      } catch {
+        // ignore
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Detects and clicks the initial 'Turn text into natural-sounding speech...' landing button
+   * to transition AI Studio from the welcome/template screen to the actual prompt editor.
+   */
+  static ensureSpeechEditorInitialized(): boolean {
+    if (AIStudioAdapter.findTextInput() !== null) {
+      return true;
+    }
+
+    const startBtn = document.querySelector<HTMLButtonElement>(
+      "button.text-input-container, .text-input-container button, button:has(.text-input-container), [class*='text-input-container']"
+    );
+    if (startBtn) {
+      AIStudioAdapter.triggerTrustedClick(startBtn);
+      return true;
+    }
+
+    const allButtons = document.querySelectorAll("button, div[role='button']");
+    for (const btn of allButtons) {
+      const text = (btn as HTMLElement).innerText?.trim() || "";
+      if (text.includes("Turn text into") || text.includes("natural-sounding speech")) {
+        AIStudioAdapter.triggerTrustedClick(btn as HTMLElement);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -283,6 +363,7 @@ export class AIStudioAdapter {
 
   /**
    * Triggers audio synthesis safely. NEVER clicks if already generating.
+   * Multi-tiered trigger: DOM Pointer sequence + Hardware CDP Coordinate Click + Hardware CDP Ctrl+Enter.
    */
   static clickRun(): boolean {
     if (AIStudioAdapter.isGenerating()) {
@@ -291,25 +372,68 @@ export class AIStudioAdapter {
     }
 
     const btn = AIStudioAdapter.findRunButton();
-    if (!btn) return false;
-
-    // Double check that button is NOT in Stop state
-    if (btn.innerText.trim().toLowerCase().includes("stop") || btn.innerHTML.includes("progress_activity")) {
-      console.warn("[AIStudioAdapter] Button is in Stop state. Not clicking.");
-      return false;
-    }
+    const promptInput = AIStudioAdapter.findTextInput();
 
     // Dismiss error banner if any before clicking Run
     AIStudioAdapter.dismissErrorBanners();
 
-    // Dispatch complete pointer interaction sequence
-    btn.focus();
-    btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }));
-    btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
-    btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerType: "mouse" }));
-    btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
-    btn.click();
-    return true;
+    let clicked = false;
+    if (btn && !btn.innerText.trim().toLowerCase().includes("stop") && !btn.innerHTML.includes("progress_activity")) {
+      // 1. In-DOM Pointer & Click Sequence
+      try {
+        btn.focus();
+        btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+        btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+        btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+        btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
+        btn.click();
+      } catch {
+        // ignore
+      }
+
+      // 2. Hardware CDP Mouse Click (isTrusted = true) via Service Worker
+      const coords = AIStudioAdapter.getElementCenterCoords(btn);
+      if (coords && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({ type: "CDP_TRUSTED_CLICK", coords });
+        } catch {
+          // ignore
+        }
+      }
+
+      clicked = true;
+    }
+
+    // 3. Secondary dispatch: In-DOM keyboard trigger Ctrl+Enter
+    if (promptInput) {
+      try {
+        promptInput.focus();
+        const ctrlEnterEvent = new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          which: 13,
+          ctrlKey: true,
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        promptInput.dispatchEvent(ctrlEnterEvent);
+      } catch {
+        // ignore
+      }
+    }
+
+    // 4. Tertiary dispatch: Hardware CDP Ctrl+Enter (isTrusted = true)
+    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      try {
+        chrome.runtime.sendMessage({ type: "CDP_TRUSTED_KEYBOARD_RUN" });
+      } catch {
+        // ignore
+      }
+    }
+
+    return clicked;
   }
 
   /**
@@ -317,8 +441,11 @@ export class AIStudioAdapter {
    */
   static getGeneratedAudioSrc(): string | null {
     const audioEl = document.querySelector("ms-music-player audio, audio") as HTMLAudioElement | null;
-    if (audioEl && audioEl.src && (audioEl.src.startsWith("data:audio") || audioEl.src.startsWith("blob:") || audioEl.src.startsWith("http"))) {
-      return audioEl.src;
+    if (audioEl) {
+      const src = audioEl.currentSrc || audioEl.src;
+      if (src && (src.startsWith("data:audio") || src.startsWith("blob:") || src.startsWith("http"))) {
+        return src;
+      }
     }
     const sourceEl = document.querySelector("ms-music-player source, audio source") as HTMLSourceElement | null;
     if (sourceEl && sourceEl.src) {
@@ -341,21 +468,40 @@ export class AIStudioAdapter {
   }
 
   /**
-   * Reads visible error toast or banner if generation failed.
+   * Reads visible error toast, snackbar, or banner if generation failed or rate-limited.
    */
   static readVisibleError(): string | null {
     const errorContainers = [
+      ".main-content .message",
+      ".message span",
+      "ms-notification-banner",
+      ".mat-mdc-snack-bar-container",
       "ms-global-banner",
       ".error-message",
       "mat-error",
       ".cdk-overlay-pane .error",
       "[role='alert']",
+      "ms-banner",
     ];
 
     for (const selector of errorContainers) {
       const el = document.querySelector(selector);
       if (el && el.textContent?.trim()) {
-        return el.textContent.trim();
+        const text = el.textContent.trim();
+        if (
+          text.includes("400") ||
+          text.includes("403") ||
+          text.includes("429") ||
+          text.includes("500") ||
+          text.includes("Http response") ||
+          text.includes("error") ||
+          text.includes("Quota") ||
+          text.includes("exhausted") ||
+          text.includes("Rate limit") ||
+          text.includes("Failed")
+        ) {
+          return text;
+        }
       }
     }
 

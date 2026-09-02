@@ -43,6 +43,7 @@
 - Do not add abstractions without a real variation point or clear simplification.
 - Do not test private implementation details when public behavior can be tested.
 - Domain logic must remain pure and free from framework/transport dependencies.
+- Do not include user-imported books, markdown texts, audio files, or copyrighted material in git commits or commit messages. Keep all user data inside data/ (strictly ignored in .gitignore).
 ```
 
 ---

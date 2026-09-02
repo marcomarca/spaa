@@ -36,8 +36,114 @@ function swLog(level: "info" | "warn" | "error", msg: string) {
 
 swLog("info", `Initialized as ${workerId} (${profileAlias}) with backend ${backendUrl}`);
 
-// Listen for popup actions
+// Chrome DevTools Protocol (CDP) Trusted Input Dispatchers
+async function performCDPClick(tabId: number, x: number, y: number): Promise<boolean> {
+  const target = { tabId };
+  try {
+    await chrome.debugger.attach(target, "1.3");
+
+    // 1. Move to position
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: Math.round(x),
+      y: Math.round(y),
+    });
+
+    // 2. Press mouse left button (isTrusted = true)
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      button: "left",
+      clickCount: 1,
+      x: Math.round(x),
+      y: Math.round(y),
+    });
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    // 3. Release mouse left button
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      button: "left",
+      clickCount: 1,
+      x: Math.round(x),
+      y: Math.round(y),
+    });
+
+    await chrome.debugger.detach(target);
+    swLog("info", `CDP Trusted Click dispatched at (${Math.round(x)}, ${Math.round(y)})`);
+    return true;
+  } catch (err) {
+    swLog("warn", `CDP Click fallback note: ${err}`);
+    try {
+      await chrome.debugger.detach(target);
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
+
+async function performCDPCtrlEnter(tabId: number): Promise<boolean> {
+  const target = { tabId };
+  try {
+    await chrome.debugger.attach(target, "1.3");
+
+    // Key Down: Ctrl + Enter
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "rawKeyDown",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+      macCharCode: 13,
+      unmodifiedText: "\r",
+      text: "\r",
+      modifiers: 2, // Control modifier
+    });
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Key Up
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "keyUp",
+      windowsVirtualKeyCode: 13,
+      modifiers: 2,
+    });
+
+    await chrome.debugger.detach(target);
+    swLog("info", "CDP Trusted Hardware Ctrl+Enter dispatched to AI Studio");
+    return true;
+  } catch (err) {
+    swLog("warn", `CDP Ctrl+Enter note: ${err}`);
+    try {
+      await chrome.debugger.detach(target);
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
+
+// Listen for popup actions and content script requests
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "CDP_TRUSTED_CLICK") {
+    const tabId = _sender.tab?.id || message.tabId;
+    if (tabId && message.coords) {
+      performCDPClick(tabId, message.coords.x, message.coords.y).then((ok) => {
+        sendResponse({ success: ok });
+      });
+      return true;
+    }
+  }
+
+  if (message.type === "CDP_TRUSTED_KEYBOARD_RUN") {
+    const tabId = _sender.tab?.id || message.tabId;
+    if (tabId) {
+      performCDPCtrlEnter(tabId).then((ok) => {
+        sendResponse({ success: ok });
+      });
+      return true;
+    }
+  }
+
   if (message.type === "GET_WORKER_STATUS") {
     sendResponse({
       workerId,

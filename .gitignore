@@ -18,11 +18,11 @@ dist/
 *.local
 .bun/
 
-# SPAA Local Data & Runtime
-data/library/
-data/temporary/
-data/gemini-inbox/
-data/backups/
+# SPAA Local Data & Runtime (User Books & Audio)
+data/
+data/*
+!data/.gitkeep
+*.md.tmp
 *.sqlite
 *.sqlite3
 *.db

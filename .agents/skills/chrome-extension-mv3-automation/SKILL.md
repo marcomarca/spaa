@@ -154,6 +154,16 @@ if (!(window as any).__SPAA_CONTENT_SCRIPT_INITIALIZED__) {
 
 ---
 
-## 5. Versioning Rule
+## 5. Chrome DevTools Protocol (CDP) for Trusted Hardware Clicks
 
-Always increment the version in both `extension/manifest.json` and `extension/package.json` on every modification (e.g. `2.2.0` $\rightarrow$ `2.3.0`). This guarantees clear traceability in `chrome://extensions/`.
+When automating applications with anti-automation defenses (like Angular / Google apps verifying `event.isTrusted === true`):
+- Synthetic JS `element.click()` or `dispatchEvent()` produce `isTrusted = false`.
+- **Solution:** Use `chrome.debugger` API with `Input.dispatchMouseEvent` and `Input.dispatchKeyEvent`.
+- Events emitted via CDP arrive at Chrome's core hardware input pipeline and have **`isTrusted: true`**, making them completely indistinguishable from physical mouse and keyboard inputs.
+
+---
+
+## 6. Versioning Rule
+
+Always increment the version in both `extension/manifest.json` and `extension/package.json` on every modification (e.g. `2.6.0` $\rightarrow$ `2.7.0`). This guarantees clear traceability in `chrome://extensions/`.
+
