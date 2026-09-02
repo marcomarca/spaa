@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
 from spaa.adapters.repositories import (
+    ChapterRepository,
     TtsChunkRepository,
     TtsJobRepository,
     TtsWorkerRepository,
@@ -22,6 +23,7 @@ class TtsQueueService:
         self.db = db
         self.jobs_repo = TtsJobRepository(db)
         self.chunks_repo = TtsChunkRepository(db)
+        self.chapters_repo = ChapterRepository(db)
         self.workers_repo = TtsWorkerRepository(db)
 
     def claim_job(self, worker_id: str, profile_alias: str = "", provider: str = "gemini") -> Optional[Dict[str, Any]]:
@@ -50,6 +52,10 @@ class TtsQueueService:
 
         # Update chunk status
         chunk = self.chunks_repo.get(job.chunk_id)
+        chapter = self.chapters_repo.get(chunk.chapter_id) if chunk else None
+        chapter_chunks = self.chunks_repo.list_by_chapter(chunk.chapter_id) if chunk else []
+        total_chunks = len(chapter_chunks) if chapter_chunks else 1
+
         if chunk:
             chunk.status = "CLAIMED"
             chunk.updated_at = now
@@ -64,7 +70,10 @@ class TtsQueueService:
             "chunk_id": chunk.id if chunk else "",
             "book_id": chunk.book_id if chunk else "",
             "chapter_id": chunk.chapter_id if chunk else "",
+            "chapter_title": chapter.title if chapter else f"Capítulo {chapter.sequence if chapter else 1}",
+            "chapter_sequence": chapter.sequence if chapter else 1,
             "sequence": chunk.sequence if chunk else 1,
+            "total_chunks": total_chunks,
             "spoken_text": chunk.spoken_text if chunk else "",
             "word_count": chunk.word_count if chunk else 0,
             "language": chunk.language if chunk else "es",

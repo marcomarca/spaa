@@ -3,7 +3,10 @@ export interface ClaimedJob {
   chunk_id: string;
   book_id: string;
   chapter_id: string;
+  chapter_title?: string;
+  chapter_sequence?: number;
   sequence: number;
+  total_chunks?: number;
   spoken_text: string;
   word_count: number;
   language: string;

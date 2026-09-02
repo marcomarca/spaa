@@ -469,14 +469,24 @@ function extractBase64FromDataUrl(dataUrl: string): string {
 
 async function executeJob(job: {
   job_id: string;
+  chunk_id: string;
+  chapter_title?: string;
+  chapter_sequence?: number;
+  sequence: number;
+  total_chunks?: number;
   spoken_text: string;
   scene?: string;
   sample_context?: string;
 }) {
   const shortId = job.job_id.slice(0, 8);
+  const chapterNum = job.chapter_sequence || 1;
+  const chunkSeq = job.sequence || 1;
+  const totalChunks = job.total_chunks || 1;
+  const headerTag = `Cap. ${chapterNum} • Bloque ${chunkSeq}/${totalChunks}`;
   const wordCount = job.spoken_text.split(/\s+/).filter(Boolean).length;
-  console.log(`[SPAA Content Script] Starting TTS generation for job ${job.job_id}...`);
-  updateHUD("🟡 PREPARANDO JOB", `Job #${shortId} (${wordCount} palabras)`, `Iniciando procesamiento de Chunk #${shortId}...`, "#f59e0b");
+
+  console.log(`[SPAA Content Script] Starting TTS generation for ${headerTag} (Job #${shortId})...`);
+  updateHUD("🟡 PREPARANDO JOB", headerTag, `Iniciando síntesis (${wordCount} palabras)...`, "#f59e0b");
 
   // 1. Auto-open Speech Editor if in landing/template state
   AIStudioAdapter.ensureSpeechEditorInitialized();
@@ -485,7 +495,7 @@ async function executeJob(job: {
   // 2. If currently generating from a previous action, wait for it to settle
   let waitGen = 0;
   while (AIStudioAdapter.isGenerating() && waitGen < 30) {
-    updateHUD("⏳ ESPERANDO SÍNTESIS PREVIA", `Job #${shortId}`, "Esperando que AI Studio termine la generación anterior...", "#f59e0b");
+    updateHUD("⏳ ESPERANDO SÍNTESIS PREVIA", headerTag, "Esperando que AI Studio termine la generación anterior...", "#f59e0b");
     await sleep(1000);
     waitGen++;
   }
@@ -509,7 +519,7 @@ async function executeJob(job: {
   }
 
   if (!input) {
-    updateHUD("🔴 ERROR DOM", `Job #${shortId}`, "Campo 'Enter a prompt' no encontrado", "#ef4444");
+    updateHUD("🔴 ERROR DOM", headerTag, "Campo 'Enter a prompt' no encontrado", "#ef4444");
     return { success: false, error: "Campo de texto 'Enter a prompt' no encontrado en AI Studio" };
   }
 
@@ -531,24 +541,24 @@ async function executeJob(job: {
   }
 
   const previousAudio = AIStudioAdapter.getGeneratedAudioSrc();
-  updateHUD("🟡 INYECTANDO TEXTO", `Job #${shortId}`, `Insertando ${wordCount} palabras en prompt...`, "#f59e0b");
+  updateHUD("🟡 INYECTANDO TEXTO", headerTag, `Insertando ${wordCount} palabras en prompt...`, "#f59e0b");
   const setOk = AIStudioAdapter.setPromptText(input, job.spoken_text);
   if (!setOk) {
-    updateHUD("🔴 ERROR TEXTO", `Job #${shortId}`, "Fallo al insertar texto en el textarea", "#ef4444");
+    updateHUD("🔴 ERROR TEXTO", headerTag, "Fallo al insertar texto en el textarea", "#ef4444");
     return { success: false, error: "Fallo al insertar el texto en el textarea" };
   }
-  AIStudioAdapter.highlightElement(input, `Job ${shortId}`, "#38bdf8");
+  AIStudioAdapter.highlightElement(input, headerTag, "#38bdf8");
 
   await sleep(500);
 
   const runBtn = AIStudioAdapter.findRunButton();
   if (!runBtn) {
-    updateHUD("🔴 ERROR RUN", `Job #${shortId}`, "Botón Run no encontrado", "#ef4444");
+    updateHUD("🔴 ERROR RUN", headerTag, "Botón Run no encontrado", "#ef4444");
     return { success: false, error: "Botón 'Run' no encontrado en el DOM" };
   }
 
   AIStudioAdapter.highlightElement(runBtn, "Ejecutando...", "#10b981");
-  updateHUD("⚡ ENVIANDO RUN ↵", `Job #${shortId}`, "Pulsando botón Run / Ctrl+Enter...", "#38bdf8");
+  updateHUD("⚡ ENVIANDO RUN ↵", headerTag, "Pulsando botón Run / Ctrl+Enter...", "#38bdf8");
   AIStudioAdapter.clickRun();
 
   // Closed-loop check: verify if AI Studio transitioned to generating (Stop) state
@@ -579,7 +589,7 @@ async function executeJob(job: {
 
     const isGen = AIStudioAdapter.isGenerating();
     if (isGen && !loggedGenerating) {
-      updateHUD("⚡ SINTETIZANDO AUDIO", `Job #${shortId} (Estado: Stop)`, "Google AI Studio está sintetizando el audio...", "#a855f7");
+      updateHUD("⚡ SINTETIZANDO AUDIO", `${headerTag} (Estado: Stop)`, "Google AI Studio está sintetizando el audio...", "#a855f7");
       loggedGenerating = true;
     }
 
@@ -600,7 +610,7 @@ async function executeJob(job: {
         for (let cd = 12; cd > 0; cd--) {
           updateHUD(
             "🟠 ESPERA ANTI-RATE LIMIT",
-            `Job #${shortId} (Reintento ${retryCount}/3 en ${cd}s)`,
+            `${headerTag} (Reintento ${retryCount}/3 en ${cd}s)`,
             `Error 403/429 de AI Studio. Esperando ${cd}s para reintentar...`,
             "#f59e0b"
           );
@@ -614,12 +624,12 @@ async function executeJob(job: {
         if (currentInput) {
           AIStudioAdapter.setPromptText(currentInput, job.spoken_text);
         }
-        updateHUD("⚡ REINTENTANDO RUN", `Job #${shortId} (Intento ${retryCount + 1})`, "Reintentando enviar Run...", "#38bdf8");
+        updateHUD("⚡ REINTENTANDO RUN", `${headerTag} (Intento ${retryCount + 1})`, "Reintentando enviar Run...", "#38bdf8");
         AIStudioAdapter.clickRun();
         loggedGenerating = false;
         continue;
       } else {
-        updateHUD("🔴 ERROR AI STUDIO", `Job #${shortId}`, `Error: ${visibleError}`, "#ef4444");
+        updateHUD("🔴 ERROR AI STUDIO", headerTag, `Error: ${visibleError}`, "#ef4444");
         return { success: false, error: `Error visible en AI Studio: ${visibleError}` };
       }
     }
@@ -628,7 +638,7 @@ async function executeJob(job: {
     // Only capture when new audio is present and generation is completed (not in Stop state)
     if (audioSrc && audioSrc !== previousAudio && !AIStudioAdapter.isGenerating()) {
       console.log("[SPAA Content Script] Generated audio captured from player!");
-      updateHUD("📥 AUDIO CAPTURADO", `Job #${shortId}`, "Extrayendo audio WAV del reproductor...", "#22c55e");
+      updateHUD("📥 AUDIO CAPTURADO", headerTag, "Extrayendo audio WAV del reproductor...", "#22c55e");
 
       const playerEl = document.querySelector<HTMLElement>("ms-music-player");
       if (playerEl) {
@@ -657,11 +667,11 @@ async function executeJob(job: {
       const dlBtn = AIStudioAdapter.findDownloadButton();
       if (dlBtn) dlBtn.click();
 
-      updateHUD("☁️ SUBIENDO AL SERVIDOR", `Job #${shortId}`, "Subiendo WAV a localhost:8009...", "#38bdf8");
+      updateHUD("☁️ GUARDANDO Y VALIDANDO", headerTag, "Enviando WAV al backend SPAA...", "#38bdf8");
 
       // 5-second post-generation cooldown before starting the next chunk
       for (let cd = 5; cd > 0; cd--) {
-        updateHUD("⏳ ENFRIAMIENTO", `Job #${shortId} guardado (${cd}s)`, `Pausa de seguridad anti-rate-limit (${cd}s)...`, "#38bdf8");
+        updateHUD("⏳ ENFRIAMIENTO", `${headerTag} COMPLETADO ✓`, `Pausa de seguridad anti-rate-limit (${cd}s)...`, "#38bdf8");
         await sleep(1000);
       }
 
@@ -673,6 +683,6 @@ async function executeJob(job: {
     }
   }
 
-  updateHUD("🔴 TIMEOUT", `Job #${shortId}`, "Timeout esperando audio (150s)", "#ef4444");
+  updateHUD("🔴 TIMEOUT", headerTag, "Timeout esperando audio (150s)", "#ef4444");
   return { success: false, error: "Timeout esperando la generación de audio en AI Studio (150s)" };
 }
