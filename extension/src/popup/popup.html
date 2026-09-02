@@ -222,8 +222,13 @@
 </head>
 <body>
   <header>
-    <h1>SPAA AI Studio Worker</h1>
-    <span class="badge badge-active" id="status-badge">🟢 Activo</span>
+    <div>
+      <h1 style="font-size: 0.95rem; margin: 0; color: #38bdf8; font-weight: 700;">SPAA AI Studio Worker</h1>
+      <span class="badge badge-active" id="status-badge" style="margin-top: 3px; display: inline-block;">🟢 Activo</span>
+    </div>
+    <button id="master-power-btn" style="background: #ef4444; color: #ffffff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+      ⏻ Apagar
+    </button>
   </header>
 
   <button class="btn-copy-debug" id="btn-copy-debug">

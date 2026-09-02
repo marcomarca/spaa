@@ -69,24 +69,65 @@ export class AIStudioAdapter {
   }
 
   /**
-   * Performs a multi-tiered trusted click (DOM Pointer Sequence + CDP Hardware Mouse Click).
+   * Performs an ultra-robust multi-tiered trusted click:
+   * 1. HTML5 Form requestSubmit / Form Submission
+   * 2. Full Physical Pointer + Mouse Event suite on target and its inner label/span
+   * 3. Hardware CDP Mouse Click with buttons: 1 bitmask
+   * 4. Native Prototype Click bypass
    */
   static triggerTrustedClick(element: HTMLElement | null): boolean {
     if (!element) return false;
 
-    // 1. In-DOM Pointer Sequence
-    try {
-      element.focus();
-      element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }));
-      element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
-      element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerType: "mouse" }));
-      element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
-      element.click();
-    } catch {
-      // ignore
+    // Layer 1: Form requestSubmit (Angular form handler hook)
+    const form = element.closest("form") || (element as HTMLButtonElement).form;
+    if (form && typeof form.requestSubmit === "function") {
+      try {
+        form.requestSubmit(element as HTMLButtonElement);
+      } catch {
+        // ignore
+      }
     }
 
-    // 2. CDP Hardware Mouse Click via Service Worker
+    // Layer 2: Full Pointer & Mouse Sequence on both element and inner children
+    const targets = [element, element.querySelector(".run-button-label"), element.querySelector("span")].filter(
+      Boolean
+    ) as HTMLElement[];
+
+    for (const target of targets) {
+      try {
+        target.focus();
+        target.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+        target.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+        target.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            cancelable: true,
+            pointerType: "mouse",
+            isPrimary: true,
+            button: 0,
+            buttons: 1,
+          })
+        );
+        target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, buttons: 1, which: 1 }));
+        target.dispatchEvent(
+          new PointerEvent("pointerup", {
+            bubbles: true,
+            cancelable: true,
+            pointerType: "mouse",
+            isPrimary: true,
+            button: 0,
+            buttons: 0,
+          })
+        );
+        target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0, buttons: 0, which: 1 }));
+        target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, buttons: 0, which: 1 }));
+        HTMLElement.prototype.click.call(target);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Layer 3: Hardware CDP Mouse Click via Service Worker (isTrusted = true)
     const coords = AIStudioAdapter.getElementCenterCoords(element);
     if (coords && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
       try {
@@ -328,31 +369,42 @@ export class AIStudioAdapter {
 
   /**
    * Checks if audio generation is currently in progress.
-   * Matches exact AI Studio Stop button: <button ms-button><span class="spin">progress_activity</span><span>Stop</span></button>
+   * Priority detection: matches 'Stop', '.spin', 'progress_activity', or disabled prompt.
    */
   static isGenerating(): boolean {
-    // 1. Check if any run button currently contains 'Stop', '.spin', or 'progress_activity'
-    const msRunBtn = document.querySelector("ms-run-button button, button:has(.run-button-label), button:has(.spin)") as HTMLButtonElement | null;
+    // 1. Check if the run/stop button in ms-run-button is in Stop state
+    const msRunBtn = document.querySelector(
+      "ms-run-button button, button:has(.run-button-label), button:has(.spin), [mattooltipclass*='run-button']"
+    ) as HTMLButtonElement | null;
     if (msRunBtn) {
-      const text = msRunBtn.innerText.trim().toLowerCase();
+      const text = (msRunBtn.innerText || "").trim().toLowerCase();
       if (text.includes("stop")) return true;
-      if (msRunBtn.querySelector(".spin, [class*='spin'], [class*='progress_activity']") || msRunBtn.innerHTML.includes("progress_activity")) {
+      if (
+        msRunBtn.querySelector(".spin, [class*='spin'], progress_activity, [class*='progress_activity'], mat-spinner") ||
+        msRunBtn.innerHTML.includes("progress_activity") ||
+        msRunBtn.innerHTML.includes("spin")
+      ) {
         return true;
       }
-      if (msRunBtn.getAttribute("type") === "button" && !text.includes("run")) {
-        return true;
-      }
+      const ariaLabel = (msRunBtn.getAttribute("aria-label") || "").toLowerCase();
+      if (ariaLabel.includes("stop") || ariaLabel.includes("cancel")) return true;
+      if (msRunBtn.getAttribute("type") === "button" && !text.includes("run")) return true;
     }
 
     // 2. Check all buttons for active Stop state
     const allButtons = document.querySelectorAll("button");
     for (const b of allButtons) {
-      if (b.innerText.trim().toLowerCase() === "stop" || (b.innerHTML.includes("progress_activity") && b.innerHTML.includes("spin"))) {
+      const bText = (b.innerText || "").trim().toLowerCase();
+      if (bText === "stop" || (b.innerHTML.includes("progress_activity") && (b.innerHTML.includes("spin") || b.innerHTML.includes("stop")))) {
+        return true;
+      }
+      const bAria = (b.getAttribute("aria-label") || "").toLowerCase();
+      if (bAria === "stop" || bAria.includes("stop generation")) {
         return true;
       }
     }
 
-    // 3. Container level class
+    // 3. Container level generating class
     const runContainer = document.querySelector("ms-run-button");
     if (runContainer && (runContainer.classList.contains("generating") || runContainer.querySelector(".spin, progress_activity, mat-spinner"))) {
       return true;
@@ -362,78 +414,46 @@ export class AIStudioAdapter {
   }
 
   /**
-   * Triggers audio synthesis safely. NEVER clicks if already generating.
-   * Multi-tiered trigger: DOM Pointer sequence + Hardware CDP Coordinate Click + Hardware CDP Ctrl+Enter.
+   * Triggers audio synthesis safely. STRICTLY NEVER clicks if already generating.
    */
   static clickRun(): boolean {
     if (AIStudioAdapter.isGenerating()) {
-      console.warn("[AIStudioAdapter] Already generating! Aborting clickRun to prevent canceling synthesis.");
+      console.warn("[AIStudioAdapter] Generation already in progress (Stop state)! Aborting clickRun.");
       return false;
     }
 
     const btn = AIStudioAdapter.findRunButton();
     const promptInput = AIStudioAdapter.findTextInput();
 
-    // Dismiss error banner if any before clicking Run
-    AIStudioAdapter.dismissErrorBanners();
-
-    let clicked = false;
-    if (btn && !btn.innerText.trim().toLowerCase().includes("stop") && !btn.innerHTML.includes("progress_activity")) {
-      // 1. In-DOM Pointer & Click Sequence
-      try {
-        btn.focus();
-        btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }));
-        btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
-        btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerType: "mouse" }));
-        btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
-        btn.click();
-      } catch {
-        // ignore
-      }
-
-      // 2. Hardware CDP Mouse Click (isTrusted = true) via Service Worker
-      const coords = AIStudioAdapter.getElementCenterCoords(btn);
-      if (coords && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-        try {
-          chrome.runtime.sendMessage({ type: "CDP_TRUSTED_CLICK", coords });
-        } catch {
-          // ignore
-        }
-      }
-
-      clicked = true;
+    if (!btn) {
+      console.warn("[AIStudioAdapter] Run button not found in DOM.");
+      return false;
     }
 
-    // 3. Secondary dispatch: In-DOM keyboard trigger Ctrl+Enter
+    const btnText = (btn.innerText || "").trim().toLowerCase();
+    if (btnText.includes("stop") || btn.innerHTML.includes("progress_activity") || btn.innerHTML.includes("spin")) {
+      console.warn("[AIStudioAdapter] Button is in Stop/Spinning state! Aborting click to avoid canceling synthesis.");
+      return false;
+    }
+
+    AIStudioAdapter.dismissErrorBanners();
+
+    // 1. Focus prompt input and dispatch Ctrl+Enter as primary CDP trigger
     if (promptInput) {
       try {
         promptInput.focus();
-        const ctrlEnterEvent = new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          which: 13,
-          ctrlKey: true,
-          metaKey: true,
-          bubbles: true,
-          cancelable: true,
-        });
-        promptInput.dispatchEvent(ctrlEnterEvent);
+        if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+          chrome.runtime.sendMessage({ type: "CDP_TRUSTED_KEYBOARD_RUN" });
+        }
       } catch {
         // ignore
       }
     }
 
-    // 4. Tertiary dispatch: Hardware CDP Ctrl+Enter (isTrusted = true)
-    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      try {
-        chrome.runtime.sendMessage({ type: "CDP_TRUSTED_KEYBOARD_RUN" });
-      } catch {
-        // ignore
-      }
-    }
+    // 2. Dispatch multi-vector trusted click on the Run button
+    AIStudioAdapter.triggerTrustedClick(btn);
 
-    return clicked;
+    return true;
   }
 
   /**

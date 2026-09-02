@@ -36,90 +36,130 @@ function swLog(level: "info" | "warn" | "error", msg: string) {
 
 swLog("info", `Initialized as ${workerId} (${profileAlias}) with backend ${backendUrl}`);
 
-// Chrome DevTools Protocol (CDP) Trusted Input Dispatchers
-async function performCDPClick(tabId: number, x: number, y: number): Promise<boolean> {
+// Chrome DevTools Protocol (CDP) Hardware Trusted Input Engine
+async function executeWithDebugger(tabId: number, fn: (target: chrome.debugger.Debuggee) => Promise<void>): Promise<boolean> {
   const target = { tabId };
+  let attachedHere = false;
   try {
     await chrome.debugger.attach(target, "1.3");
+    attachedHere = true;
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    if (!msg.includes("already attached")) {
+      swLog("warn", `Debugger attach notice: ${msg}`);
+      return false;
+    }
+  }
 
-    // 1. Move to position
-    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
-      type: "mouseMoved",
-      x: Math.round(x),
-      y: Math.round(y),
-    });
-
-    // 2. Press mouse left button (isTrusted = true)
-    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
-      type: "mousePressed",
-      button: "left",
-      clickCount: 1,
-      x: Math.round(x),
-      y: Math.round(y),
-    });
-
-    await new Promise((r) => setTimeout(r, 60));
-
-    // 3. Release mouse left button
-    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
-      type: "mouseReleased",
-      button: "left",
-      clickCount: 1,
-      x: Math.round(x),
-      y: Math.round(y),
-    });
-
-    await chrome.debugger.detach(target);
-    swLog("info", `CDP Trusted Click dispatched at (${Math.round(x)}, ${Math.round(y)})`);
+  try {
+    await fn(target);
     return true;
   } catch (err) {
-    swLog("warn", `CDP Click fallback note: ${err}`);
-    try {
-      await chrome.debugger.detach(target);
-    } catch {
-      // ignore
-    }
+    swLog("warn", `Debugger command notice: ${err}`);
     return false;
+  } finally {
+    if (attachedHere) {
+      try {
+        await chrome.debugger.detach(target);
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 
-async function performCDPCtrlEnter(tabId: number): Promise<boolean> {
-  const target = { tabId };
-  try {
-    await chrome.debugger.attach(target, "1.3");
+async function performCDPClick(tabId: number, x: number, y: number): Promise<boolean> {
+  return executeWithDebugger(tabId, async (target) => {
+    const roundX = Math.round(x);
+    const roundY = Math.round(y);
 
-    // Key Down: Ctrl + Enter
+    // 1. Move cursor to target coordinates
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: roundX,
+      y: roundY,
+      button: "none",
+      buttons: 0,
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+
+    // 2. Physical Left Mouse Down (buttons: 1 bitmask is mandatory for Chromium trusted clicks)
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+      x: roundX,
+      y: roundY,
+      modifiers: 0,
+    });
+
+    await new Promise((r) => setTimeout(r, 70));
+
+    // 3. Physical Left Mouse Up (buttons: 0)
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+      x: roundX,
+      y: roundY,
+      modifiers: 0,
+    });
+
+    swLog("info", `CDP Hardware Trusted Click executed at (${roundX}, ${roundY}) with buttons: 1`);
+  });
+}
+
+async function performCDPCtrlEnter(tabId: number): Promise<boolean> {
+  return executeWithDebugger(tabId, async (target) => {
+    // 1. Press Control Key
     await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
       type: "rawKeyDown",
-      windowsVirtualKeyCode: 13,
+      windowsVirtualKeyCode: 17, // Control
+      nativeVirtualKeyCode: 17,
+      key: "Control",
+      code: "ControlLeft",
+      modifiers: 2, // Control modifier
+    });
+
+    await new Promise((r) => setTimeout(r, 30));
+
+    // 2. Press Enter with Ctrl modifier active
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "rawKeyDown",
+      windowsVirtualKeyCode: 13, // Enter
       nativeVirtualKeyCode: 13,
-      macCharCode: 13,
+      key: "Enter",
+      code: "Enter",
       unmodifiedText: "\r",
       text: "\r",
-      modifiers: 2, // Control modifier
+      modifiers: 2,
     });
 
     await new Promise((r) => setTimeout(r, 60));
 
-    // Key Up
+    // 3. Release Enter
     await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
       type: "keyUp",
       windowsVirtualKeyCode: 13,
+      key: "Enter",
+      code: "Enter",
       modifiers: 2,
     });
 
-    await chrome.debugger.detach(target);
-    swLog("info", "CDP Trusted Hardware Ctrl+Enter dispatched to AI Studio");
-    return true;
-  } catch (err) {
-    swLog("warn", `CDP Ctrl+Enter note: ${err}`);
-    try {
-      await chrome.debugger.detach(target);
-    } catch {
-      // ignore
-    }
-    return false;
-  }
+    // 4. Release Control
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "keyUp",
+      windowsVirtualKeyCode: 17,
+      key: "Control",
+      code: "ControlLeft",
+      modifiers: 0,
+    });
+
+    swLog("info", "CDP Hardware Trusted Ctrl+Enter executed");
+  });
 }
 
 // Listen for popup actions and content script requests

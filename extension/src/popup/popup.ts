@@ -37,6 +37,7 @@ const profileAliasInput = document.getElementById("profileAliasInput") as HTMLIn
 const backendUrlInput = document.getElementById("backendUrlInput") as HTMLInputElement;
 const saveConfigBtn = document.getElementById("saveConfigBtn") as HTMLButtonElement;
 const togglePauseBtn = document.getElementById("togglePauseBtn") as HTMLButtonElement;
+const masterPowerBtn = document.getElementById("master-power-btn") as HTMLButtonElement;
 const jobIndicator = document.getElementById("job-indicator") as HTMLSpanElement;
 
 let isPaused = false;
@@ -282,11 +283,19 @@ function refreshWorkerStatus() {
       statusBadge.className = "badge badge-paused";
       togglePauseBtn.textContent = "Reanudar Worker";
       togglePauseBtn.className = "btn btn-resume";
+      if (masterPowerBtn) {
+        masterPowerBtn.textContent = "⏻ Activar";
+        masterPowerBtn.style.background = "#10b981";
+      }
     } else {
       statusBadge.textContent = res.isProcessing ? "⚡ Generando..." : "🟢 Activo";
       statusBadge.className = "badge badge-active";
       togglePauseBtn.textContent = "Pausar Worker";
       togglePauseBtn.className = "btn btn-pause";
+      if (masterPowerBtn) {
+        masterPowerBtn.textContent = "⏻ Apagar";
+        masterPowerBtn.style.background = "#ef4444";
+      }
     }
 
     if (res.currentJob) {
@@ -319,6 +328,13 @@ saveConfigBtn?.addEventListener("click", () => {
 });
 
 togglePauseBtn?.addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "SET_PAUSED", paused: !isPaused }, (res) => {
+    isPaused = res.isPaused;
+    refreshWorkerStatus();
+  });
+});
+
+masterPowerBtn?.addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "SET_PAUSED", paused: !isPaused }, (res) => {
     isPaused = res.isPaused;
     refreshWorkerStatus();

@@ -43,6 +43,9 @@ function getOrCreateHUD(): HTMLElement {
         <span id="spaa-hud-title">SPAA TTS Worker Live</span>
       </div>
       <div style="display:flex; align-items:center; gap:6px;">
+        <button id="spaa-hud-power" type="button" style="background:#ef4444; border:none; border-radius:4px; color:#ffffff; cursor:pointer; font-size:11px; font-weight:700; padding:2px 8px; display:flex; align-items:center; gap:3px;">
+          ⏻ Apagar
+        </button>
         <span style="font-size:11px; color:#64748b; cursor:grab;" title="Arrastra desde aquí">⋮⋮ Mover</span>
         <button id="spaa-hud-toggle" type="button" style="background:#1e293b; border:1px solid #475569; border-radius:4px; color:#cbd5e1; cursor:pointer; font-size:11px; padding:2px 8px;">
           ${isSavedMin ? "Expandir" : "Minimizar"}
@@ -110,7 +113,7 @@ function getOrCreateHUD(): HTMLElement {
     window.addEventListener("mouseup", onMouseUp);
   };
 
-  // Setup Toggle
+  // Setup Toggle Minimize
   const toggleBtn = hudElement.querySelector("#spaa-hud-toggle") as HTMLButtonElement;
   const hudBody = hudElement.querySelector("#spaa-hud-body") as HTMLElement;
 
@@ -138,6 +141,47 @@ function getOrCreateHUD(): HTMLElement {
     minimized = !minimized;
     localStorage.setItem("spaa_hud_minimized", String(minimized));
     applyMinimize(minimized);
+  };
+
+  // Setup Power Button (ON / OFF)
+  const powerBtn = hudElement.querySelector("#spaa-hud-power") as HTMLButtonElement;
+  let hudPaused = false;
+
+  const applyPowerUI = (paused: boolean) => {
+    hudPaused = paused;
+    if (powerBtn) {
+      if (paused) {
+        powerBtn.style.background = "#10b981";
+        powerBtn.innerText = "⏻ Activar";
+        updateHUD("⚫ EXTENSIÓN APAGADA", "Automatización en pausa", "Worker detenido por el usuario.", "#64748b");
+      } else {
+        powerBtn.style.background = "#ef4444";
+        powerBtn.innerText = "⏻ Apagar";
+      }
+    }
+  };
+
+  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    chrome.storage.local.get(["isPaused"], (res) => {
+      if (typeof res.isPaused === "boolean") {
+        applyPowerUI(res.isPaused);
+      }
+    });
+
+    chrome.storage.onChanged.addListener((changes) => {
+      if (changes.isPaused) {
+        applyPowerUI(changes.isPaused.newValue);
+      }
+    });
+  }
+
+  powerBtn.onclick = (e) => {
+    e.stopPropagation();
+    const newPaused = !hudPaused;
+    applyPowerUI(newPaused);
+    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: "SET_PAUSED", paused: newPaused });
+    }
   };
 
   return hudElement;
@@ -558,39 +602,39 @@ async function executeJob(job: {
   }
 
   AIStudioAdapter.highlightElement(runBtn, "Ejecutando...", "#10b981");
-  updateHUD("⚡ ENVIANDO RUN ↵", headerTag, "Pulsando botón Run / Ctrl+Enter...", "#38bdf8");
+  updateHUD("⚡ ENVIANDO RUN ↵", headerTag, "Pulsando botón Run...", "#38bdf8");
   AIStudioAdapter.clickRun();
 
-  // Closed-loop check: verify if AI Studio transitioned to generating (Stop) state
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await sleep(1500);
-
+  // Closed-loop confirmation: Wait for Stop state to be active without sending extra cancel clicks
+  for (let w = 0; w < 12; w++) {
+    await sleep(350);
     if (AIStudioAdapter.isGenerating()) {
+      console.log(`[SPAA Content Script] Generation confirmed active (Stop button detected)!`);
       break;
     }
-
     const immediateErr = AIStudioAdapter.readVisibleError();
     if (immediateErr) {
-      console.warn(`[SPAA Content Script] Detected error immediately on Run attempt ${attempt + 1}: ${immediateErr}`);
+      console.warn(`[SPAA Content Script] Detected error immediately after Run: ${immediateErr}`);
       break;
     }
-
-    console.log(`[SPAA Content Script] Generation did not start yet, re-dispatching Run (attempt ${attempt + 2})...`);
-    AIStudioAdapter.clickRun();
   }
 
   const startTime = Date.now();
   const TIMEOUT_MS = 150000;
   let loggedGenerating = false;
+  let hasBeenGenerating = false;
   let retryCount = 0;
 
   while (Date.now() - startTime < TIMEOUT_MS) {
     await sleep(1000);
 
     const isGen = AIStudioAdapter.isGenerating();
-    if (isGen && !loggedGenerating) {
-      updateHUD("⚡ SINTETIZANDO AUDIO", `${headerTag} (Estado: Stop)`, "Google AI Studio está sintetizando el audio...", "#a855f7");
-      loggedGenerating = true;
+    if (isGen) {
+      hasBeenGenerating = true;
+      if (!loggedGenerating) {
+        updateHUD("⚡ SINTETIZANDO AUDIO", `${headerTag} (Estado: Stop)`, "Google AI Studio está sintetizando el audio...", "#a855f7");
+        loggedGenerating = true;
+      }
     }
 
     const visibleError = AIStudioAdapter.readVisibleError();
