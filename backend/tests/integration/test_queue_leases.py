@@ -38,7 +38,7 @@ def test_queue_claiming_and_lease_recovery():
         id="job-1",
         chunk_id="chunk-1",
         status="QUEUED",
-        provider="gemini",
+        provider="f5",
     )
     db.add(chunk)
     db.add(job)

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/queue", tags=["TTS Queue & Workers"])
 class ClaimJobRequest(BaseModel):
     worker_id: str
     profile_alias: str = ""
-    provider: str = "gemini"
+    provider: str = "f5"
 
 
 class HeartbeatRequest(BaseModel):

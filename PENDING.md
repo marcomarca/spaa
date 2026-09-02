@@ -192,9 +192,9 @@ Proteger datos irreemplazables (base de datos SQLite, cheatsheets, notas, respue
 ## Resumen de Prioridades de Ejecución
 
 ```text
-Prioridad 1: Extensión Chrome en vivo (G1-G6) -> Validar flujo automático completo con Gemini AI Studio.
-Prioridad 2: Capacitor Android -> Empaquetado APK y servicio Media3 en segundo plano.
+Prioridad 1: Síntesis Local F5-TTS en GPU (Completado y Operativo con script run_f5_worker.ps1).
+Prioridad 2: Capacitor Android -> Empaquetado APK y servicio de audio en segundo plano.
 Prioridad 3: Conectividad LAN/Tailscale automática y descargas atómicas en móvil.
-Prioridad 4: Integración F5-TTS / Edge-TTS en backend (Etapa 2).
-Prioridad 5: Sistema de preguntas y evaluación de exámenes (Etapa 3).
+Prioridad 4: Sistema de preguntas y evaluación de exámenes (Etapa 3).
+Prioridad 5: Proveedor Edge-TTS / Gemini AI Studio como opciones de fallback secundario.
 ```
