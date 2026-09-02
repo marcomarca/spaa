@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, Dict
 
@@ -131,6 +132,48 @@ class AudioPipelineService:
         except Exception:
             self.db.rollback()
             return False
+
+    def import_from_downloads_folder(
+        self,
+        job_id: str,
+        worker_id: str,
+        downloads_dir: str | None = None,
+        max_age_seconds: int = 180,
+    ) -> Dict[str, Any]:
+        """Finds the newest 'Generated Audio*.wav' or *.wav in Downloads and processes it for the job."""
+        job = self.jobs_repo.get(job_id)
+        if not job or job.worker_id != worker_id:
+            return {"success": False, "error": "Job no asignado a este worker o no encontrado"}
+
+        chunk = self.chunks_repo.get(job.chunk_id)
+        if not chunk:
+            return {"success": False, "error": "Chunk asociado no encontrado"}
+
+        target_dir = Path(downloads_dir) if downloads_dir else Path.home() / "Downloads"
+        if not target_dir.exists():
+            return {"success": False, "error": f"Directorio de descargas no encontrado: {target_dir}"}
+
+        # Search for recent WAV files
+        wav_files = list(target_dir.glob("Generated Audio*.wav")) + list(target_dir.glob("*.wav"))
+        unique_files = list({f.resolve(): f for f in wav_files}.values())
+        if not unique_files:
+            return {"success": False, "error": "No se encontraron archivos WAV en la carpeta de descargas"}
+
+        now_ts = datetime.now().timestamp()
+        sorted_files = sorted(unique_files, key=lambda f: f.stat().st_mtime, reverse=True)
+        newest_file = sorted_files[0]
+        file_age = now_ts - newest_file.stat().st_mtime
+
+        if file_age > max_age_seconds:
+            return {
+                "success": False,
+                "error": f"El archivo más reciente ({newest_file.name}) tiene {int(file_age)}s de antigüedad (máximo permitido: {max_age_seconds}s)",
+            }
+
+        with open(newest_file, "rb") as f:
+            res = self.process_chunk_wav_upload(job_id=job_id, worker_id=worker_id, file_obj=f)
+
+        return res
 
     def _handle_qa_failure(self, job, chunk, worker_id: str, reason: str):
         now = utc_now()

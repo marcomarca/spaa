@@ -123,4 +123,21 @@ export class WorkerClient {
       return { success: false, error: String(err) };
     }
   }
+
+  async importDownloadedWav(jobId: string, downloadsDir?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch(`${this.backendUrl}/api/queue/import-download/${jobId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          worker_id: this.workerId,
+          downloads_dir: downloadsDir,
+        }),
+      });
+
+      return await res.json();
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  }
 }

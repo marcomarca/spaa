@@ -278,19 +278,46 @@ async function pollAndExecute() {
     // Send job to content script
     const result = await sendTabMessage(tabId, { type: "EXECUTE_TTS_JOB", job });
 
-    if (!result || !result.success || !result.base64_audio) {
+    if (!result || !result.success) {
       const errorMsg = result?.error || "Fallo en generación de audio o timeout";
       swLog("error", `Job ${job.job_id} failed: ${errorMsg}`);
       await client.reportStatus(job.job_id, "ERROR", errorMsg);
     } else {
-      swLog("info", `Job ${job.job_id} synthesis complete. Uploading audio...`);
+      swLog("info", `Job ${job.job_id} synthesis complete. Processing audio delivery...`);
       await client.reportStatus(job.job_id, "DOWNLOADING");
 
-      const uploadRes = await client.uploadBase64Audio(job.job_id, result.base64_audio);
-      if (uploadRes.success) {
-        swLog("info", `Job ${job.job_id} successfully processed and QA validated!`);
+      let uploadSuccess = false;
+      let lastErr = "";
+
+      // Path A: Base64 direct buffer upload
+      if (result.base64_audio) {
+        const uploadRes = await client.uploadBase64Audio(job.job_id, result.base64_audio);
+        if (uploadRes.success) {
+          uploadSuccess = true;
+          swLog("info", `Job ${job.job_id} successfully validated via Base64 stream!`);
+        } else {
+          lastErr = uploadRes.error || "Fallo en validación Base64";
+          swLog("warn", `Base64 upload attempt failed for job ${job.job_id}: ${lastErr}. Trying Downloads folder pickup...`);
+        }
+      }
+
+      // Path B: Fallback pickup from Downloads folder (Generated Audio *.wav)
+      if (!uploadSuccess) {
+        await new Promise((r) => setTimeout(r, 1200)); // allow OS write to finish
+        const importRes = await client.importDownloadedWav(job.job_id);
+        if (importRes.success) {
+          uploadSuccess = true;
+          swLog("info", `Job ${job.job_id} successfully validated from Downloads folder!`);
+        } else {
+          lastErr = importRes.error || lastErr || "Fallo al importar de Downloads";
+        }
+      }
+
+      if (uploadSuccess) {
+        swLog("info", `Job ${job.job_id} (${job.chapter_title || 'Capítulo'} Bloque ${job.sequence}/${job.total_chunks || 1}) GUARDADO Y COMPLETADO ✓`);
       } else {
-        swLog("error", `QA validation failed for job ${job.job_id}: ${uploadRes.error}`);
+        swLog("error", `QA validation failed for job ${job.job_id}: ${lastErr}`);
+        await client.reportStatus(job.job_id, "ERROR", lastErr);
       }
     }
   } catch (err) {

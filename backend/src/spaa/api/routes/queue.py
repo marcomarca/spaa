@@ -96,6 +96,28 @@ async def upload_chunk_wav(
     return result
 
 
+class ImportDownloadRequest(BaseModel):
+    worker_id: str
+    downloads_dir: Optional[str] = None
+
+
+@router.post("/import-download/{job_id}")
+def import_downloaded_wav(
+    job_id: str,
+    req: ImportDownloadRequest,
+    db: Session = Depends(get_db),
+):
+    svc = AudioPipelineService(db)
+    result = svc.import_from_downloads_folder(
+        job_id=job_id,
+        worker_id=req.worker_id,
+        downloads_dir=req.downloads_dir,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=422, detail=result.get("error", "Error importando descarga"))
+    return result
+
+
 @router.get("/status")
 def get_queue_status(db: Session = Depends(get_db)):
     jobs_repo = TtsJobRepository(db)
