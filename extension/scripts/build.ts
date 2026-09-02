@@ -25,6 +25,21 @@ if (!buildResult.success) {
   process.exit(1);
 }
 
+// Ensure content-script.js and popup.js do not have ES module 'export' keywords
+const contentScriptPath = join(distDir, "content-script.js");
+if (existsSync(contentScriptPath)) {
+  let code = readFileSync(contentScriptPath, "utf-8");
+  code = code.replace(/export\s*\{[^}]*\};?/g, "").replace(/export\s+default\s+[^;]+;?/g, "");
+  writeFileSync(contentScriptPath, code);
+}
+
+const popupJsPath = join(distDir, "popup/popup.js");
+if (existsSync(popupJsPath)) {
+  let code = readFileSync(popupJsPath, "utf-8");
+  code = code.replace(/export\s*\{[^}]*\};?/g, "").replace(/export\s+default\s+[^;]+;?/g, "");
+  writeFileSync(popupJsPath, code);
+}
+
 // 2. Generate dist/manifest.json pointing to built .js files
 const manifestRaw = readFileSync(join(rootDir, "manifest.json"), "utf-8");
 const manifest = JSON.parse(manifestRaw);

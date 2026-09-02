@@ -15,6 +15,7 @@
 | Converting a rough idea into product scope | To PRD | PRD with goals, non-goals, stories, risks |
 | Converting a plan into work items | To Issues | Vertical issues with acceptance criteria |
 | Setting up repo safety | Pre-Commit + Git Guardrails | Hooks, checks, protected workflow |
+| Developing or modifying Chrome Extension MV3 | [Chrome Extension MV3 Automation](file:///d:/apps-2026/SPAA/.agents/skills/chrome-extension-mv3-automation/SKILL.md) | Content scripts without export keywords, universal tab queries, resilient messaging |
 | Continuing work later or handing off to another agent | Handoff | Current state, decisions, next actions, risks |
 
 ---
@@ -69,7 +70,11 @@
 
 ## 4. Chrome Extension Standards (MV3)
 
+- **Skill Reference:** [chrome-extension-mv3-automation](file:///d:/apps-2026/SPAA/.agents/skills/chrome-extension-mv3-automation/SKILL.md)
 - **Manifest:** Manifest V3 (`service-worker.ts`, `content-script.ts`).
+- **No ES Module Exports in Content Scripts:** Bundlers must strip `export` keywords from `content-script.js` so Chrome executes it as a classic script without syntax errors.
+- **Resilient Tab Discovery:** Always use universal `chrome.tabs.query({})` with in-memory matching; never rely on strict URL queries that fail with query parameters.
+- **Dynamic Re-Injection:** `sendTabMessage` must handle `Receiving end does not exist` by automatically executing `chrome.scripting.executeScript` and retrying.
 - **DOM Isolation:** All DOM manipulation and AI Studio interactions must reside exclusively in `aistudio-adapter.ts`.
-- **Worker Protocol:** Long-polling or HTTP heartbeats for job claims and status reporting to the backend queue.
-- **Chrome APIs:** Real download monitoring via `chrome.downloads`.
+- **Versioning:** Always bump the version in `manifest.json` and `package.json` with every update.
+

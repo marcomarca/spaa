@@ -1,5 +1,104 @@
 import { AIStudioAdapter } from "./aistudio-adapter";
 
+// Live Floating HUD Logger
+let hudElement: HTMLElement | null = null;
+const hudLogs: string[] = [];
+
+function getOrCreateHUD(): HTMLElement {
+  if (hudElement && document.body.contains(hudElement)) return hudElement;
+
+  hudElement = document.createElement("div");
+  hudElement.id = "spaa-worker-live-hud";
+  hudElement.style.cssText = `
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    width: 360px;
+    max-width: 90vw;
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(12px);
+    border: 1px solid #38bdf8;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(56, 189, 248, 0.25);
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    z-index: 9999999;
+    padding: 12px 14px;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+  `;
+
+  hudElement.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #334155; padding-bottom:6px;">
+      <div style="font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:6px;">
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;" id="spaa-hud-dot"></span>
+        SPAA TTS Worker Live
+      </div>
+      <button id="spaa-hud-toggle" type="button" style="background:transparent; border:1px solid #475569; border-radius:4px; color:#cbd5e1; cursor:pointer; font-size:11px; padding:2px 6px;">
+        Minimizar
+      </button>
+    </div>
+    <div id="spaa-hud-status" style="font-weight:600; color:#facc15; margin-bottom:4px; font-size:12px;">
+      🟢 IDLE (Esperando Tareas)
+    </div>
+    <div id="spaa-hud-details" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">
+      Servidor: Conectado | AI Studio: Listo
+    </div>
+    <div id="spaa-hud-logbox" style="background:#020617; border-radius:6px; padding:8px; font-family:monospace; font-size:10.5px; max-height:110px; overflow-y:auto; color:#cbd5e1; border:1px solid #1e293b;">
+      <div style="color:#64748b;">[Iniciando] Monitor en vivo activado...</div>
+    </div>
+  `;
+
+  document.body.appendChild(hudElement);
+
+  const toggleBtn = hudElement.querySelector("#spaa-hud-toggle") as HTMLButtonElement;
+  let minimized = false;
+  toggleBtn.onclick = (e) => {
+    e.stopPropagation();
+    minimized = !minimized;
+    const logbox = hudElement!.querySelector("#spaa-hud-logbox") as HTMLElement;
+    const details = hudElement!.querySelector("#spaa-hud-details") as HTMLElement;
+    if (minimized) {
+      logbox.style.display = "none";
+      details.style.display = "none";
+      toggleBtn.innerText = "Expandir";
+    } else {
+      logbox.style.display = "block";
+      details.style.display = "block";
+      toggleBtn.innerText = "Minimizar";
+    }
+  };
+
+  return hudElement;
+}
+
+export function updateHUD(statusText: string, detailsText?: string, logMsg?: string, dotColor = "#22c55e") {
+  try {
+    const hud = getOrCreateHUD();
+    const statusEl = hud.querySelector("#spaa-hud-status") as HTMLElement;
+    const detailsEl = hud.querySelector("#spaa-hud-details") as HTMLElement;
+    const dotEl = hud.querySelector("#spaa-hud-dot") as HTMLElement;
+    const logbox = hud.querySelector("#spaa-hud-logbox") as HTMLElement;
+
+    if (statusEl) statusEl.innerText = statusText;
+    if (detailsEl && detailsText) detailsEl.innerText = detailsText;
+    if (dotEl) dotEl.style.background = dotColor;
+
+    if (logMsg) {
+      const time = new Date().toLocaleTimeString();
+      hudLogs.push(`[${time}] ${logMsg}`);
+      if (hudLogs.length > 25) hudLogs.shift();
+      if (logbox) {
+        logbox.innerHTML = hudLogs.map((l) => `<div style="margin-bottom:3px; line-height:1.3;">${l}</div>`).join("");
+        logbox.scrollTop = logbox.scrollHeight;
+      }
+    }
+  } catch {
+    // Ignore HUD render errors
+  }
+}
+
 // DevTools and Console Interceptor
 export interface PageLogEntry {
   timestamp: string;
@@ -69,7 +168,216 @@ window.addEventListener("unhandledrejection", (event) => {
   recordLog("error", [`[Unhandled Promise Rejection] ${event.reason?.message || event.reason}`], "window");
 });
 
-recordLog("info", ["[SPAA Content Script] Loaded and ready for live hot-testing."]);
+if (!(window as any).__SPAA_CONTENT_SCRIPT_INITIALIZED__) {
+  (window as any).__SPAA_CONTENT_SCRIPT_INITIALIZED__ = true;
+
+  // Initialize HUD
+  setTimeout(() => {
+    if (AIStudioAdapter.isAIStudioPage()) {
+      getOrCreateHUD();
+      updateHUD("🟢 LISTO / IDLE", "Pestaña AI Studio conectada", "Extensión iniciada en pestaña AI Studio");
+    }
+  }, 500);
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    try {
+      // 1. Diagnostics
+      if (message.type === "TEST_DIAGNOSE") {
+        const diag = AIStudioAdapter.diagnoseDOM();
+        sendResponse(diag);
+        return true;
+      }
+
+      // 1.1 Detailed Debug Report
+      if (message.type === "GET_DETAILED_DEBUG_REPORT") {
+        const report = AIStudioAdapter.getDetailedDebugReport();
+        sendResponse({
+          ...report,
+          pageLogs,
+        });
+        return true;
+      }
+
+      // 2. Visual Highlighter
+      if (message.type === "TEST_HIGHLIGHT_ALL") {
+        AIStudioAdapter.highlightElement(AIStudioAdapter.findTextInput(), "Prompt Textarea", "#38bdf8");
+        AIStudioAdapter.highlightElement(AIStudioAdapter.findSceneInput(), "Scene", "#a855f7");
+        AIStudioAdapter.highlightElement(AIStudioAdapter.findSampleContextInput(), "Context", "#ec4899");
+        AIStudioAdapter.highlightElement(AIStudioAdapter.findRunButton(), "Run Button", "#10b981");
+        AIStudioAdapter.highlightElement(AIStudioAdapter.findModelSelector(), "Model Selector", "#eab308");
+        AIStudioAdapter.highlightElement(AIStudioAdapter.findVoiceSelector(), "Voice Selector", "#f97316");
+        sendResponse({ success: true });
+        return true;
+      }
+
+      // 3. Highlight specific target
+      if (message.type === "TEST_PING_ELEMENT") {
+        const target = message.target;
+        let el: HTMLElement | null = null;
+        let label = target;
+        let color = "#38bdf8";
+
+        if (target === "prompt") {
+          el = AIStudioAdapter.findTextInput();
+          label = "Prompt Textarea";
+        } else if (target === "scene") {
+          el = AIStudioAdapter.findSceneInput();
+          label = "Scene Input";
+          color = "#a855f7";
+        } else if (target === "context") {
+          el = AIStudioAdapter.findSampleContextInput();
+          label = "Sample Context Input";
+          color = "#ec4899";
+        } else if (target === "run") {
+          el = AIStudioAdapter.findRunButton();
+          label = "Run Button";
+          color = "#10b981";
+        } else if (target === "model") {
+          el = AIStudioAdapter.findModelSelector();
+          label = "Model Selector";
+          color = "#eab308";
+        } else if (target === "voice") {
+          el = AIStudioAdapter.findVoiceSelector();
+          label = "Voice Selector";
+          color = "#f97316";
+        } else if (target === "player") {
+          el = document.querySelector("ms-music-player");
+          label = "Music Player";
+          color = "#06b6d4";
+        }
+
+        if (el) {
+          AIStudioAdapter.highlightElement(el, label, color);
+          sendResponse({ success: true, matched: true });
+        } else {
+          sendResponse({ success: false, matched: false, error: `Element '${target}' not found in DOM` });
+        }
+        return true;
+      }
+
+      // 4. Mode toggle
+      if (message.type === "TEST_TOGGLE_MODE") {
+        const newMode = AIStudioAdapter.toggleMode(message.mode);
+        sendResponse({ success: true, mode: newMode });
+        return true;
+      }
+
+      // 5. Injections
+      if (message.type === "TEST_SET_PROMPT") {
+        const text = message.text || "Hola, esta es una prueba en caliente del pipeline de audio de SPAA.";
+        const input = AIStudioAdapter.findTextInput();
+        if (!input) {
+          sendResponse({ success: false, error: "Textarea 'Enter a prompt' no encontrado" });
+          return true;
+        }
+        const ok = AIStudioAdapter.setPromptText(input, text);
+        AIStudioAdapter.highlightElement(input, "Texto Inyectado", "#38bdf8");
+        sendResponse({ success: ok, length: text.length, value: input.value });
+        return true;
+      }
+
+      if (message.type === "TEST_SET_SCENE") {
+        const text = message.text || "[enérgico, profesional] Grabación de audiolibro técnico.";
+        const input = AIStudioAdapter.findSceneInput();
+        if (!input) {
+          sendResponse({ success: false, error: "Textarea 'Scene' no encontrado" });
+          return true;
+        }
+        const ok = AIStudioAdapter.setPromptText(input, text);
+        AIStudioAdapter.highlightElement(input, "Escena Inyectada", "#a855f7");
+        sendResponse({ success: ok, length: text.length, value: input.value });
+        return true;
+      }
+
+      if (message.type === "TEST_SET_CONTEXT") {
+        const text = message.text || "El narrador comienza a explicar el siguiente capítulo.";
+        const input = AIStudioAdapter.findSampleContextInput();
+        if (!input) {
+          sendResponse({ success: false, error: "Textarea 'Sample Context' no encontrado" });
+          return true;
+        }
+        const ok = AIStudioAdapter.setPromptText(input, text);
+        AIStudioAdapter.highlightElement(input, "Contexto Inyectado", "#ec4899");
+        sendResponse({ success: ok, length: text.length, value: input.value });
+        return true;
+      }
+
+      // 6. Action Triggers
+      if (message.type === "TEST_CLICK_RUN") {
+        const ok = AIStudioAdapter.clickRun();
+        sendResponse({ success: ok });
+        return true;
+      }
+
+      // 7. Audio Extraction
+      if (message.type === "TEST_EXTRACT_AUDIO") {
+        const audioSrc = AIStudioAdapter.getGeneratedAudioSrc();
+        if (!audioSrc) {
+          sendResponse({ success: false, hasAudio: false, error: "No hay audio generado en el reproductor" });
+          return true;
+        }
+
+        if (audioSrc.startsWith("data:audio")) {
+          const base64 = extractBase64FromDataUrl(audioSrc);
+          sendResponse({
+            success: true,
+            hasAudio: true,
+            type: "data-url",
+            base64_audio: base64,
+            length: base64.length,
+          });
+          return true;
+        }
+
+        // Fetch Blob
+        fetch(audioSrc)
+          .then((res) => res.blob())
+          .then(async (blob) => {
+            const buffer = await blob.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binary);
+            sendResponse({
+              success: true,
+              hasAudio: true,
+              type: "blob-url",
+              base64_audio: base64,
+              size_bytes: blob.size,
+            });
+          })
+          .catch((err) => {
+            sendResponse({ success: false, error: String(err) });
+          });
+        return true;
+      }
+
+      // 8. Regular Production Automation Execution
+      if (message.type === "CHECK_PAGE_READY") {
+        AIStudioAdapter.ensureTextMode();
+        const isReady = AIStudioAdapter.isAIStudioPage() && AIStudioAdapter.findTextInput() !== null;
+        const model = AIStudioAdapter.getSelectedModel();
+        const voice = AIStudioAdapter.getSelectedVoice();
+        sendResponse({ ready: isReady, model, voice });
+        return true;
+      }
+
+      if (message.type === "EXECUTE_TTS_JOB") {
+        const { job } = message;
+        executeJob(job)
+          .then((result) => sendResponse(result))
+          .catch((err) => sendResponse({ success: false, error: String(err) }));
+        return true;
+      }
+    } catch (err: any) {
+      console.error("[SPAA Content Script] Error handling message:", err);
+      sendResponse({ success: false, error: err?.message || String(err) });
+      return true;
+    }
+  });
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,213 +388,28 @@ function extractBase64FromDataUrl(dataUrl: string): string {
   return parts.length > 1 ? parts[1] : dataUrl;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  // 1. Diagnostics
-  if (message.type === "TEST_DIAGNOSE") {
-    const diag = AIStudioAdapter.diagnoseDOM();
-    sendResponse(diag);
-    return true;
-  }
-
-  // 1.1 Detailed Debug Report
-  if (message.type === "GET_DETAILED_DEBUG_REPORT") {
-    const report = AIStudioAdapter.getDetailedDebugReport();
-    sendResponse({
-      ...report,
-      pageLogs,
-    });
-    return true;
-  }
-
-  // 2. Visual Highlighter
-  if (message.type === "TEST_HIGHLIGHT_ALL") {
-    AIStudioAdapter.highlightElement(AIStudioAdapter.findTextInput(), "Prompt Textarea", "#38bdf8");
-    AIStudioAdapter.highlightElement(AIStudioAdapter.findSceneInput(), "Scene", "#a855f7");
-    AIStudioAdapter.highlightElement(AIStudioAdapter.findSampleContextInput(), "Context", "#ec4899");
-    AIStudioAdapter.highlightElement(AIStudioAdapter.findRunButton(), "Run Button", "#10b981");
-    AIStudioAdapter.highlightElement(AIStudioAdapter.findModelSelector(), "Model Selector", "#eab308");
-    AIStudioAdapter.highlightElement(AIStudioAdapter.findVoiceSelector(), "Voice Selector", "#f97316");
-    sendResponse({ success: true });
-    return true;
-  }
-
-  // 3. Highlight specific target
-  if (message.type === "TEST_PING_ELEMENT") {
-    const target = message.target;
-    let el: HTMLElement | null = null;
-    let label = target;
-    let color = "#38bdf8";
-
-    if (target === "prompt") {
-      el = AIStudioAdapter.findTextInput();
-      label = "Prompt Textarea";
-      color = "#38bdf8";
-    } else if (target === "scene") {
-      el = AIStudioAdapter.findSceneInput();
-      label = "Scene Textarea";
-      color = "#a855f7";
-    } else if (target === "context") {
-      el = AIStudioAdapter.findSampleContextInput();
-      label = "Context Textarea";
-      color = "#ec4899";
-    } else if (target === "run") {
-      el = AIStudioAdapter.findRunButton();
-      label = "Run Button";
-      color = "#10b981";
-    } else if (target === "model") {
-      el = AIStudioAdapter.findModelSelector();
-      label = "Model Settings";
-      color = "#eab308";
-    } else if (target === "voice") {
-      el = AIStudioAdapter.findVoiceSelector();
-      label = "Speaker / Voice";
-      color = "#f97316";
-    } else if (target === "player") {
-      el = document.querySelector("ms-music-player");
-      label = "Music Player";
-      color = "#06b6d4";
-    }
-
-    if (el) {
-      AIStudioAdapter.highlightElement(el, label, color);
-      sendResponse({ success: true, found: true });
-    } else {
-      sendResponse({ success: false, found: false, error: `Elemento '${target}' no encontrado` });
-    }
-    return true;
-  }
-
-  // 4. Inject Text Tests
-  if (message.type === "TEST_SET_PROMPT") {
-    const text = message.text || "Hola, esta es una prueba en caliente del sistema SPAA con Gemini 2.5 Pro Preview TTS.";
-    const input = AIStudioAdapter.findTextInput();
-    if (!input) {
-      sendResponse({ success: false, error: "Textarea de prompt no encontrado" });
-      return true;
-    }
-    const ok = AIStudioAdapter.setPromptText(input, text);
-    AIStudioAdapter.highlightElement(input, "Texto Inyectado", "#38bdf8");
-    sendResponse({ success: ok, length: text.length, value: input.value });
-    return true;
-  }
-
-  if (message.type === "TEST_SET_SCENE") {
-    const text = message.text || "[enérgico, profesional] Grabación de audiolibro técnico.";
-    const input = AIStudioAdapter.findSceneInput();
-    if (!input) {
-      sendResponse({ success: false, error: "Textarea 'Scene' no encontrado" });
-      return true;
-    }
-    const ok = AIStudioAdapter.setPromptText(input, text);
-    AIStudioAdapter.highlightElement(input, "Escena Inyectada", "#a855f7");
-    sendResponse({ success: ok, length: text.length, value: input.value });
-    return true;
-  }
-
-  if (message.type === "TEST_SET_CONTEXT") {
-    const text = message.text || "El narrador comienza a explicar el siguiente capítulo.";
-    const input = AIStudioAdapter.findSampleContextInput();
-    if (!input) {
-      sendResponse({ success: false, error: "Textarea 'Sample Context' no encontrado" });
-      return true;
-    }
-    const ok = AIStudioAdapter.setPromptText(input, text);
-    AIStudioAdapter.highlightElement(input, "Contexto Inyectado", "#ec4899");
-    sendResponse({ success: ok, length: text.length, value: input.value });
-    return true;
-  }
-
-  // 5. Toggle Mode Test
-  if (message.type === "TEST_TOGGLE_MODE") {
-    const newMode = AIStudioAdapter.toggleMode();
-    sendResponse({ success: true, activeMode: newMode });
-    return true;
-  }
-
-  // 6. Test Click Run
-  if (message.type === "TEST_CLICK_RUN") {
-    const btn = AIStudioAdapter.findRunButton();
-    if (!btn) {
-      sendResponse({ success: false, error: "Botón Run no encontrado" });
-      return true;
-    }
-    const isReady = AIStudioAdapter.isRunButtonReady();
-    AIStudioAdapter.highlightElement(btn, "Click en Run", "#10b981");
-    AIStudioAdapter.clickRun();
-    sendResponse({ success: true, wasReady: isReady });
-    return true;
-  }
-
-  // 7. Test Extract Audio
-  if (message.type === "TEST_EXTRACT_AUDIO") {
-    const audioSrc = AIStudioAdapter.getGeneratedAudioSrc();
-    if (!audioSrc) {
-      sendResponse({ success: false, hasAudio: false, error: "No hay audio generado en ms-music-player" });
-      return true;
-    }
-
-    let base64 = "";
-    if (audioSrc.startsWith("data:audio")) {
-      base64 = extractBase64FromDataUrl(audioSrc);
-      sendResponse({
-        success: true,
-        hasAudio: true,
-        type: "data-url",
-        base64_audio: base64,
-        size_bytes: Math.round((base64.length * 3) / 4),
-      });
-    } else {
-      fetch(audioSrc)
-        .then((r) => r.blob())
-        .then(async (blob) => {
-          const buffer = await blob.arrayBuffer();
-          const bytes = new Uint8Array(buffer);
-          let binary = "";
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          base64 = btoa(binary);
-          sendResponse({
-            success: true,
-            hasAudio: true,
-            type: "blob-url",
-            base64_audio: base64,
-            size_bytes: blob.size,
-          });
-        })
-        .catch((err) => {
-          sendResponse({ success: false, error: String(err) });
-        });
-    }
-    return true;
-  }
-
-  // 8. Regular Production Automation Execution
-  if (message.type === "CHECK_PAGE_READY") {
-    AIStudioAdapter.ensureTextMode();
-    const isReady = AIStudioAdapter.isAIStudioPage() && AIStudioAdapter.findTextInput() !== null;
-    const model = AIStudioAdapter.getSelectedModel();
-    const voice = AIStudioAdapter.getSelectedVoice();
-    sendResponse({ ready: isReady, model, voice });
-    return true;
-  }
-
-  if (message.type === "EXECUTE_TTS_JOB") {
-    const { job } = message;
-    executeJob(job)
-      .then((result) => sendResponse(result))
-      .catch((err) => sendResponse({ success: false, error: String(err) }));
-    return true;
-  }
-});
-
 async function executeJob(job: {
   job_id: string;
   spoken_text: string;
   scene?: string;
   sample_context?: string;
 }) {
+  const shortId = job.job_id.slice(0, 8);
+  const wordCount = job.spoken_text.split(/\s+/).filter(Boolean).length;
   console.log(`[SPAA Content Script] Starting TTS generation for job ${job.job_id}...`);
+  updateHUD("🟡 PREPARANDO JOB", `Job #${shortId} (${wordCount} palabras)`, `Iniciando procesamiento de Chunk #${shortId}...`, "#f59e0b");
+
+  // 1. If currently generating from a previous action, wait for it to settle
+  let waitGen = 0;
+  while (AIStudioAdapter.isGenerating() && waitGen < 30) {
+    updateHUD("⏳ ESPERANDO SÍNTESIS PREVIA", `Job #${shortId}`, "Esperando que AI Studio termine la generación anterior...", "#f59e0b");
+    await sleep(1000);
+    waitGen++;
+  }
+
+  // 2. Dismiss any existing error toast/banner
+  AIStudioAdapter.dismissErrorBanners();
+  await sleep(200);
 
   AIStudioAdapter.ensureTextMode();
   await sleep(250);
@@ -300,6 +423,7 @@ async function executeJob(job: {
   }
 
   if (!input) {
+    updateHUD("🔴 ERROR DOM", `Job #${shortId}`, "Campo 'Enter a prompt' no encontrado", "#ef4444");
     return { success: false, error: "Campo de texto 'Enter a prompt' no encontrado en AI Studio" };
   }
 
@@ -321,37 +445,52 @@ async function executeJob(job: {
   }
 
   const previousAudio = AIStudioAdapter.getGeneratedAudioSrc();
+  updateHUD("🟡 INYECTANDO TEXTO", `Job #${shortId}`, `Insertando ${wordCount} palabras en prompt...`, "#f59e0b");
   const setOk = AIStudioAdapter.setPromptText(input, job.spoken_text);
   if (!setOk) {
+    updateHUD("🔴 ERROR TEXTO", `Job #${shortId}`, "Fallo al insertar texto en el textarea", "#ef4444");
     return { success: false, error: "Fallo al insertar el texto en el textarea" };
   }
-  AIStudioAdapter.highlightElement(input, `Job ${job.job_id.slice(0, 8)}`, "#38bdf8");
+  AIStudioAdapter.highlightElement(input, `Job ${shortId}`, "#38bdf8");
 
-  await sleep(400);
+  await sleep(500);
 
   const runBtn = AIStudioAdapter.findRunButton();
   if (!runBtn) {
+    updateHUD("🔴 ERROR RUN", `Job #${shortId}`, "Botón Run no encontrado", "#ef4444");
     return { success: false, error: "Botón 'Run' no encontrado en el DOM" };
   }
 
   AIStudioAdapter.highlightElement(runBtn, "Ejecutando...", "#10b981");
-  AIStudioAdapter.clickRun();
-  console.log("[SPAA Content Script] 'Run' button clicked. Waiting for audio synthesis...");
+  updateHUD("⚡ ENVIANDO RUN ↵", `Job #${shortId}`, "Pulsando botón Run / Ctrl+Enter...", "#38bdf8");
+  const clicked = AIStudioAdapter.clickRun();
+  console.log(`[SPAA Content Script] 'Run' trigger executed (success: ${clicked}). Waiting for audio synthesis...`);
 
   const startTime = Date.now();
-  const TIMEOUT_MS = 120000;
+  const TIMEOUT_MS = 150000;
+  let loggedGenerating = false;
 
   while (Date.now() - startTime < TIMEOUT_MS) {
     await sleep(1000);
 
+    const isGen = AIStudioAdapter.isGenerating();
+    if (isGen && !loggedGenerating) {
+      updateHUD("⚡ SINTETIZANDO AUDIO", `Job #${shortId} (Estado: Stop)`, "Google AI Studio está sintetizando el audio...", "#a855f7");
+      loggedGenerating = true;
+    }
+
     const visibleError = AIStudioAdapter.readVisibleError();
     if (visibleError && !visibleError.includes("API key")) {
+      AIStudioAdapter.dismissErrorBanners();
+      updateHUD("🔴 ERROR AI STUDIO", `Job #${shortId}`, `Error: ${visibleError}`, "#ef4444");
       return { success: false, error: `Error visible en AI Studio: ${visibleError}` };
     }
 
     const audioSrc = AIStudioAdapter.getGeneratedAudioSrc();
-    if (audioSrc && audioSrc !== previousAudio) {
+    // Only capture when new audio is present and generation is completed (not in Stop state)
+    if (audioSrc && audioSrc !== previousAudio && !AIStudioAdapter.isGenerating()) {
       console.log("[SPAA Content Script] Generated audio captured from player!");
+      updateHUD("📥 AUDIO CAPTURADO", `Job #${shortId}`, "Extrayendo audio WAV del reproductor...", "#22c55e");
 
       const playerEl = document.querySelector<HTMLElement>("ms-music-player");
       if (playerEl) {
@@ -380,6 +519,7 @@ async function executeJob(job: {
       const dlBtn = AIStudioAdapter.findDownloadButton();
       if (dlBtn) dlBtn.click();
 
+      updateHUD("☁️ SUBIENDO AL SERVIDOR", `Job #${shortId}`, "Subiendo WAV a localhost:8009...", "#38bdf8");
       return {
         success: true,
         job_id: job.job_id,
@@ -388,5 +528,6 @@ async function executeJob(job: {
     }
   }
 
-  return { success: false, error: "Timeout esperando la generación de audio en AI Studio (120s)" };
+  updateHUD("🔴 TIMEOUT", `Job #${shortId}`, "Timeout esperando audio (150s)", "#ef4444");
+  return { success: false, error: "Timeout esperando la generación de audio en AI Studio (150s)" };
 }

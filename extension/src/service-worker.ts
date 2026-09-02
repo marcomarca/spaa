@@ -103,23 +103,59 @@ setInterval(async () => {
   }
 }, 4000);
 
+async function getAIStudioTab(): Promise<chrome.tabs.Tab | null> {
+  const allTabs = await chrome.tabs.query({});
+  const activeAiTab = allTabs.find((t) => t.active && t.url && t.url.includes("aistudio.google.com"));
+  if (activeAiTab) return activeAiTab;
+
+  const anyAiTab = allTabs.find((t) => t.url && t.url.includes("aistudio.google.com"));
+  if (anyAiTab) return anyAiTab;
+
+  const titleAiTab = allTabs.find((t) => t.title && t.title.includes("AI Studio"));
+  if (titleAiTab) return titleAiTab;
+
+  return null;
+}
+
+async function sendTabMessage(tabId: number, message: any): Promise<any> {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, async (res) => {
+      if (chrome.runtime.lastError || res === undefined) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ["content-script.js"],
+          });
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tabId, message, (retryRes) => {
+              if (chrome.runtime.lastError) {
+                resolve({ success: false, error: chrome.runtime.lastError.message });
+              } else {
+                resolve(retryRes || { success: false, error: "Sin respuesta de AI Studio" });
+              }
+            });
+          }, 200);
+        } catch (injectErr: any) {
+          resolve({ success: false, error: injectErr?.message || "Inyección fallida" });
+        }
+      } else {
+        resolve(res);
+      }
+    });
+  });
+}
+
 async function pollAndExecute() {
-  // Check if AI Studio tab exists
-  const tabs = await chrome.tabs.query({ url: "*://aistudio.google.com/*" });
-  if (tabs.length === 0 || !tabs[0].id) {
+  const tab = await getAIStudioTab();
+  if (!tab || !tab.id) {
     return; // No AI Studio tab open, stay idle
   }
 
-  const tabId = tabs[0].id;
+  const tabId = tab.id;
 
   // Verify tab is ready
-  const isReady = await new Promise<boolean>((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type: "CHECK_PAGE_READY" }, (res) => {
-      resolve(Boolean(res?.ready));
-    });
-  });
-
-  if (!isReady) return;
+  const checkRes = await sendTabMessage(tabId, { type: "CHECK_PAGE_READY" });
+  if (!checkRes?.ready) return;
 
   // Claim next job
   isProcessing = true;
@@ -134,15 +170,12 @@ async function pollAndExecute() {
 
   try {
     // Send job to content script
-    const result = await new Promise<{ success: boolean; error?: string; base64_audio?: string }>((resolve) => {
-      chrome.tabs.sendMessage(tabId, { type: "EXECUTE_TTS_JOB", job }, (res) => {
-        resolve(res || { success: false, error: "Content script no respondió" });
-      });
-    });
+    const result = await sendTabMessage(tabId, { type: "EXECUTE_TTS_JOB", job });
 
-    if (!result.success || !result.base64_audio) {
-      swLog("error", `Job ${job.job_id} failed: ${result.error}`);
-      await client.reportStatus(job.job_id, "ERROR", result.error || "Fallo en generación de audio");
+    if (!result || !result.success || !result.base64_audio) {
+      const errorMsg = result?.error || "Fallo en generación de audio o timeout";
+      swLog("error", `Job ${job.job_id} failed: ${errorMsg}`);
+      await client.reportStatus(job.job_id, "ERROR", errorMsg);
     } else {
       swLog("info", `Job ${job.job_id} synthesis complete. Uploading audio...`);
       await client.reportStatus(job.job_id, "DOWNLOADING");
@@ -162,3 +195,4 @@ async function pollAndExecute() {
     isProcessing = false;
   }
 }
+

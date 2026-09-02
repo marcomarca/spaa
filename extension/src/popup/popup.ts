@@ -64,18 +64,15 @@ tabBtnWorker.addEventListener("click", () => {
 
 // Query active AI Studio Tab
 async function getAIStudioTab(): Promise<chrome.tabs.Tab | null> {
-  // 1. Check if active tab in current window is AI Studio (highest priority)
-  const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (activeTabs.length > 0 && activeTabs[0].url && activeTabs[0].url.includes("aistudio.google.com")) {
-    return activeTabs[0];
-  }
+  const allTabs = await chrome.tabs.query({});
+  const activeAiTab = allTabs.find((t) => t.active && t.url && t.url.includes("aistudio.google.com"));
+  if (activeAiTab) return activeAiTab;
 
-  // 2. Query any AI Studio tab in any window
-  const allAIStudioTabs = await chrome.tabs.query({ url: "*://aistudio.google.com/*" });
-  if (allAIStudioTabs.length > 0) {
-    const active = allAIStudioTabs.find((t) => t.active);
-    return active || allAIStudioTabs[0];
-  }
+  const anyAiTab = allTabs.find((t) => t.url && t.url.includes("aistudio.google.com"));
+  if (anyAiTab) return anyAiTab;
+
+  const titleAiTab = allTabs.find((t) => t.title && t.title.includes("AI Studio"));
+  if (titleAiTab) return titleAiTab;
 
   return null;
 }
@@ -85,26 +82,24 @@ async function sendTabMessage(tabId: number, message: any): Promise<any> {
   return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, message, async (res) => {
       if (chrome.runtime.lastError || res === undefined) {
-        // Content script might not be injected in this tab yet, try injecting
         try {
           await chrome.scripting.executeScript({
             target: { tabId },
             files: ["content-script.js"],
           });
-          // Wait brief tick and retry
           setTimeout(() => {
             chrome.tabs.sendMessage(tabId, message, (retryRes) => {
               if (chrome.runtime.lastError) {
-                resolve({ success: false, error: `${chrome.runtime.lastError.message} (Por favor pulsa F5 en la pestaña de AI Studio)` });
+                resolve({ success: false, error: chrome.runtime.lastError.message });
               } else {
-                resolve(retryRes || { success: false, error: "Sin respuesta de AI Studio (recarga la pestaña con F5)" });
+                resolve(retryRes || { success: false, error: "Sin respuesta de AI Studio" });
               }
             });
-          }, 150);
+          }, 300);
         } catch (injectErr: any) {
           resolve({
             success: false,
-            error: `Inyección: ${injectErr?.message || chrome.runtime.lastError?.message || "Pestaña no accesible. Recarga la pestaña de AI Studio con F5"}`,
+            error: injectErr?.message || chrome.runtime.lastError?.message || "Error al inyectar script",
           });
         }
       } else {

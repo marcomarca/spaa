@@ -6,23 +6,71 @@
  */
 export class AIStudioAdapter {
   /**
-   * Checks if current page is Google AI Studio.
+   * Checks if current URL is Google AI Studio Speech Playground.
    */
   static isAIStudioPage(): boolean {
-    return (
-      window.location.hostname.includes("aistudio.google.com") ||
-      document.querySelector("ms-speech-prompt, ms-app, ms-logo-icon") !== null
+    const url = window.location.href;
+    if (url.includes("aistudio.google.com/api-keys") || url.includes("aistudio.google.com/app/apikey")) {
+      console.warn("[AIStudioAdapter] On API keys page. Redirecting to generate-speech...");
+      window.location.href = "https://aistudio.google.com/generate-speech?model=gemini-2.5-pro-preview-tts";
+      return false;
+    }
+    return url.includes("aistudio.google.com/generate-speech") || url.includes("aistudio.google.com");
+  }
+
+  /**
+   * Dismisses any error toast or banner by clicking its close (X) button.
+   * STRICT: NEVER touches navigation, 'Get code', or API key buttons.
+   */
+  static dismissErrorBanners(): void {
+    // Close modal dialogs if opened by mistake (e.g. Get Code dialog)
+    const dialogClose = document.querySelector<HTMLButtonElement>(
+      "mat-dialog-container button[aria-label*='Close' i], ms-dialog button.close-button, .cdk-overlay-pane button.close-button, [role='dialog'] button[aria-label*='Close' i]"
     );
+    if (dialogClose) {
+      try {
+        dialogClose.click();
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Dismiss only error banners strictly inside notification containers
+    const bannerCloseBtns = document.querySelectorAll<HTMLButtonElement>(
+      "ms-global-banner button, .mat-mdc-snack-bar-container button, ms-notification-banner button[aria-label*='Close' i]"
+    );
+    for (const b of bannerCloseBtns) {
+      try {
+        b.click();
+      } catch {
+        // Ignore
+      }
+    }
   }
 
   /**
    * Switches to 'Text' mode if current view is in 'Composer' mode.
    */
   static ensureTextMode(): boolean {
-    const textToggleBtn = document.querySelector('ms-button-toggle button[data-value="TEXT"]') as HTMLButtonElement | null;
-    if (textToggleBtn && textToggleBtn.getAttribute("aria-checked") === "false") {
-      textToggleBtn.click();
-      return true;
+    const textToggleBtn = document.querySelector(
+      'ms-button-toggle button[data-value="TEXT"], button[aria-label="Text" i], mat-button-toggle[value="TEXT"] button, mat-button-toggle[value="text"] button'
+    ) as HTMLButtonElement | null;
+    if (textToggleBtn) {
+      if (textToggleBtn.getAttribute("aria-checked") === "false" || !textToggleBtn.classList.contains("selected")) {
+        textToggleBtn.click();
+        return true;
+      }
+    }
+
+    const allButtons = document.querySelectorAll("button, mat-button-toggle");
+    for (const b of allButtons) {
+      const text = b.textContent?.trim() || "";
+      if (text === "Text" || text === "≡ Text" || text.includes("Text")) {
+        if (b.getAttribute("aria-checked") === "false" || !b.classList.contains("selected")) {
+          (b as HTMLElement).click();
+          return true;
+        }
+      }
     }
     return false;
   }
@@ -31,8 +79,8 @@ export class AIStudioAdapter {
    * Toggles between Text and Composer modes.
    */
   static toggleMode(targetMode?: "TEXT" | "COMPOSER"): string {
-    const textBtn = document.querySelector('ms-button-toggle button[data-value="TEXT"]') as HTMLButtonElement | null;
-    const composerBtn = document.querySelector('ms-button-toggle button[data-value="COMPOSER"]') as HTMLButtonElement | null;
+    const textBtn = document.querySelector('ms-button-toggle button[data-value="TEXT"], button[aria-label="Text" i]') as HTMLButtonElement | null;
+    const composerBtn = document.querySelector('ms-button-toggle button[data-value="COMPOSER"], button[aria-label="Composer" i]') as HTMLButtonElement | null;
 
     if (targetMode === "TEXT") {
       textBtn?.click();
@@ -43,7 +91,6 @@ export class AIStudioAdapter {
       return "COMPOSER";
     }
 
-    // Toggle current
     if (textBtn?.getAttribute("aria-checked") === "true") {
       composerBtn?.click();
       return "COMPOSER";
@@ -53,39 +100,55 @@ export class AIStudioAdapter {
   }
 
   /**
-   * Locates the main spoken text prompt input.
+   * Locates the main spoken text prompt input across both Text and Composer modes.
    */
   static findTextInput(): HTMLTextAreaElement | null {
     // 1. Text mode main textarea (highest priority)
-    const textModePrompt = document.querySelector('textarea[aria-label="Enter a prompt"]') as HTMLTextAreaElement | null;
+    const textModePrompt = document.querySelector(
+      'textarea[aria-label="Enter a prompt" i], textarea[placeholder*="Enter a prompt" i]'
+    ) as HTMLTextAreaElement | null;
     if (textModePrompt) return textModePrompt;
 
     // 2. Transcript wrapper textarea
-    const transcriptTextarea = document.querySelector(".transcript-text textarea") as HTMLTextAreaElement | null;
+    const transcriptTextarea = document.querySelector(".transcript-text textarea, ms-speech-prompt textarea") as HTMLTextAreaElement | null;
     if (transcriptTextarea) return transcriptTextarea;
 
     // 3. Composer mode speech block textarea (fallback if in composer mode)
     const composerTextarea = document.querySelector(
-      'ms-speech-block textarea[aria-label="Speech block text"], ms-speech-block textarea'
+      'ms-speech-block textarea, textarea[aria-label*="Speech block" i], ms-autosize-textarea textarea'
     ) as HTMLTextAreaElement | null;
     if (composerTextarea) return composerTextarea;
 
     // 4. Placeholder fallback
     const placeholderTextarea = document.querySelector(
-      "textarea[placeholder*=\"That's a great idea\"], textarea[placeholder*=\"tags\"]"
+      "textarea[placeholder*=\"That's a great idea\" i], textarea[placeholder*=\"tags\" i]"
     ) as HTMLTextAreaElement | null;
     if (placeholderTextarea) return placeholderTextarea;
 
     // 5. Any textarea in speech-prompt-main
     const anyPromptTextarea = document.querySelector(".speech-prompt-main textarea") as HTMLTextAreaElement | null;
-    return anyPromptTextarea;
+    if (anyPromptTextarea) return anyPromptTextarea;
+
+    // 6. Generic visible textarea excluding Scene / Sample Context
+    const allTextareas = document.querySelectorAll("textarea");
+    for (const t of allTextareas) {
+      const label = (t.getAttribute("aria-label") || "").toLowerCase();
+      const placeholder = (t.getAttribute("placeholder") || "").toLowerCase();
+      if (!label.includes("scene") && !label.includes("context") && !placeholder.includes("scene") && !placeholder.includes("context")) {
+        return t;
+      }
+    }
+
+    return null;
   }
 
   /**
    * Locates the 'Scene' textarea.
    */
   static findSceneInput(): HTMLTextAreaElement | null {
-    return document.querySelector('textarea[aria-label="Scene"], ms-autosize-textarea[arialabel="Scene"] textarea') as HTMLTextAreaElement | null;
+    return document.querySelector(
+      'textarea[aria-label="Scene" i], textarea[placeholder*="bustling street" i], ms-autosize-textarea[arialabel*="Scene" i] textarea, ms-autosize-textarea[aria-label*="Scene" i] textarea'
+    ) as HTMLTextAreaElement | null;
   }
 
   /**
@@ -93,7 +156,7 @@ export class AIStudioAdapter {
    */
   static findSampleContextInput(): HTMLTextAreaElement | null {
     return document.querySelector(
-      'textarea[aria-label="Sample Context"], ms-autosize-textarea[arialabel="Sample Context"] textarea'
+      'textarea[aria-label*="Sample Context" i], textarea[aria-label*="Context" i], textarea[placeholder*="Previous speaker" i], ms-autosize-textarea[arialabel*="Context" i] textarea, ms-autosize-textarea[aria-label*="Context" i] textarea'
     ) as HTMLTextAreaElement | null;
   }
 
@@ -117,21 +180,30 @@ export class AIStudioAdapter {
   static setPromptText(element: HTMLTextAreaElement, text: string): boolean {
     try {
       element.focus();
+      element.select();
 
-      // Use native prototype setter to bypass Angular form control interception
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-      if (nativeSetter) {
-        nativeSetter.call(element, text);
-      } else {
-        element.value = text;
+      let inserted = false;
+      try {
+        inserted = document.execCommand("insertText", false, text);
+      } catch {
+        inserted = false;
       }
 
-      // Dispatch events for Angular form bindings
+      if (!inserted || element.value !== text) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+        if (nativeSetter) {
+          nativeSetter.call(element, text);
+        } else {
+          element.value = text;
+        }
+      }
+
+      // Dispatch comprehensive event suite for Angular Reactive Forms
       element.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
       element.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
-      element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
-      element.blur();
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+      element.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA", bubbles: true }));
+      element.dispatchEvent(new KeyboardEvent("keyup", { key: "a", code: "KeyA", bubbles: true }));
       return true;
     } catch (err) {
       console.error("[AIStudioAdapter] Failed to set prompt text:", err);
@@ -154,7 +226,8 @@ export class AIStudioAdapter {
     // 3. Button with text 'Run'
     const buttons = document.querySelectorAll("button");
     for (const btn of buttons) {
-      if (btn.innerText.trim().startsWith("Run")) {
+      const text = btn.innerText.trim();
+      if (text.startsWith("Run") || text === "Run ↵" || text.includes("Run")) {
         return btn;
       }
     }
@@ -166,6 +239,7 @@ export class AIStudioAdapter {
    * Checks if the Run button is enabled and ready to generate.
    */
   static isRunButtonReady(): boolean {
+    if (AIStudioAdapter.isGenerating()) return false;
     const btn = AIStudioAdapter.findRunButton();
     if (!btn) return false;
     const isAriaDisabled = btn.getAttribute("aria-disabled") === "true";
@@ -173,11 +247,67 @@ export class AIStudioAdapter {
   }
 
   /**
-   * Triggers audio synthesis by clicking the Run button.
+   * Checks if audio generation is currently in progress.
+   * Matches exact AI Studio Stop button: <button ms-button><span class="spin">progress_activity</span><span>Stop</span></button>
+   */
+  static isGenerating(): boolean {
+    // 1. Check if any run button currently contains 'Stop', '.spin', or 'progress_activity'
+    const msRunBtn = document.querySelector("ms-run-button button, button:has(.run-button-label), button:has(.spin)") as HTMLButtonElement | null;
+    if (msRunBtn) {
+      const text = msRunBtn.innerText.trim().toLowerCase();
+      if (text.includes("stop")) return true;
+      if (msRunBtn.querySelector(".spin, [class*='spin'], [class*='progress_activity']") || msRunBtn.innerHTML.includes("progress_activity")) {
+        return true;
+      }
+      if (msRunBtn.getAttribute("type") === "button" && !text.includes("run")) {
+        return true;
+      }
+    }
+
+    // 2. Check all buttons for active Stop state
+    const allButtons = document.querySelectorAll("button");
+    for (const b of allButtons) {
+      if (b.innerText.trim().toLowerCase() === "stop" || (b.innerHTML.includes("progress_activity") && b.innerHTML.includes("spin"))) {
+        return true;
+      }
+    }
+
+    // 3. Container level class
+    const runContainer = document.querySelector("ms-run-button");
+    if (runContainer && (runContainer.classList.contains("generating") || runContainer.querySelector(".spin, progress_activity, mat-spinner"))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Triggers audio synthesis safely. NEVER clicks if already generating.
    */
   static clickRun(): boolean {
+    if (AIStudioAdapter.isGenerating()) {
+      console.warn("[AIStudioAdapter] Already generating! Aborting clickRun to prevent canceling synthesis.");
+      return false;
+    }
+
     const btn = AIStudioAdapter.findRunButton();
     if (!btn) return false;
+
+    // Double check that button is NOT in Stop state
+    if (btn.innerText.trim().toLowerCase().includes("stop") || btn.innerHTML.includes("progress_activity")) {
+      console.warn("[AIStudioAdapter] Button is in Stop state. Not clicking.");
+      return false;
+    }
+
+    // Dismiss error banner if any before clicking Run
+    AIStudioAdapter.dismissErrorBanners();
+
+    // Dispatch complete pointer interaction sequence
+    btn.focus();
+    btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+    btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerType: "mouse" }));
+    btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
     btn.click();
     return true;
   }
@@ -186,9 +316,13 @@ export class AIStudioAdapter {
    * Finds generated audio data URI or Blob URL from the music player.
    */
   static getGeneratedAudioSrc(): string | null {
-    const audioEl = document.querySelector("ms-music-player audio") as HTMLAudioElement | null;
-    if (audioEl && audioEl.src && (audioEl.src.startsWith("data:audio") || audioEl.src.startsWith("blob:"))) {
+    const audioEl = document.querySelector("ms-music-player audio, audio") as HTMLAudioElement | null;
+    if (audioEl && audioEl.src && (audioEl.src.startsWith("data:audio") || audioEl.src.startsWith("blob:") || audioEl.src.startsWith("http"))) {
       return audioEl.src;
+    }
+    const sourceEl = document.querySelector("ms-music-player source, audio source") as HTMLSourceElement | null;
+    if (sourceEl && sourceEl.src) {
+      return sourceEl.src;
     }
     return null;
   }
@@ -204,19 +338,6 @@ export class AIStudioAdapter {
 
     const anyDl = document.querySelector("button.download-button, button[aria-label*='Download' i]") as HTMLButtonElement | null;
     return anyDl;
-  }
-
-  /**
-   * Checks if audio generation is currently in progress.
-   */
-  static isGenerating(): boolean {
-    const runBtn = AIStudioAdapter.findRunButton();
-    if (!runBtn) return false;
-
-    const isBusy = runBtn.getAttribute("aria-busy") === "true" || runBtn.closest("ms-run-button")?.classList.contains("generating");
-    const hasSpinner = runBtn.querySelector(".mat-mdc-progress-spinner, mat-spinner") !== null;
-
-    return Boolean(isBusy || hasSpinner);
   }
 
   /**
