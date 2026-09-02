@@ -190,7 +190,10 @@ class AudioPipelineService:
                 target_file = newest
 
         if target_file.stat().st_size < 1000:
-            return {"success": False, "error": f"El archivo descargado está incompleto o corrupto ({target_file.stat().st_size} bytes)"}
+            return {
+                "success": False,
+                "error": f"El archivo descargado está incompleto o corrupto ({target_file.stat().st_size} bytes)",
+            }
 
         with open(target_file, "rb") as f:
             res = self.process_chunk_wav_upload(job_id=job_id, worker_id=worker_id, file_obj=f)

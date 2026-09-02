@@ -135,9 +135,9 @@ class TtsChunk:
     spoken_text: str = ""
     word_count: int = 0
     language: Language = Language.ES
-    provider: TTSProvider = TTSProvider.GEMINI
-    model: str = "gemini-2.5-pro-preview-tts"
-    voice: str = "Puck"
+    provider: TTSProvider = TTSProvider.F5
+    model: str = "f5_spanish"
+    voice: str = "marco"
     status: JobStatus = JobStatus.NEW
     wav_path: str | None = None
     wav_sha256: str | None = None
@@ -152,7 +152,7 @@ class TtsJob:
     id: str = field(default_factory=lambda: str(uuid4()))
     chunk_id: str = ""
     status: JobStatus = JobStatus.QUEUED
-    provider: TTSProvider = TTSProvider.GEMINI
+    provider: TTSProvider = TTSProvider.F5
     worker_id: str | None = None
     claimed_at: datetime | None = None
     lease_until: datetime | None = None

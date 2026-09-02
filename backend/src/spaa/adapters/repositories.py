@@ -118,18 +118,16 @@ class TtsJobRepository:
         stmt = select(TtsJobModel).order_by(TtsJobModel.created_at.desc()).limit(limit)
         return list(self.db.scalars(stmt).all())
 
-    def find_next_available(self, provider: str = "gemini") -> Optional[TtsJobModel]:
+    def find_next_available(self, provider: Optional[str] = None) -> Optional[TtsJobModel]:
         now = utc_now()
-        stmt = (
-            select(TtsJobModel)
-            .where(
-                TtsJobModel.provider == provider,
-                (TtsJobModel.status == "QUEUED")
-                | ((TtsJobModel.status == "RETRY_WAIT") & (TtsJobModel.next_retry_at <= now)),
-            )
-            .order_by(TtsJobModel.created_at.asc())
-            .limit(1)
-        )
+        conditions = [
+            (TtsJobModel.status == "QUEUED")
+            | ((TtsJobModel.status == "RETRY_WAIT") & (TtsJobModel.next_retry_at <= now)),
+        ]
+        if provider and provider != "any":
+            conditions.append(TtsJobModel.provider == provider)
+
+        stmt = select(TtsJobModel).where(*conditions).order_by(TtsJobModel.created_at.asc()).limit(1)
         return self.db.scalar(stmt)
 
     def recover_expired_leases(self) -> int:

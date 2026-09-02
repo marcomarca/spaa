@@ -107,7 +107,9 @@ class BookService:
                     spoken_text=chunk.spoken_text,
                     word_count=chunk.word_count,
                     language=language,
-                    provider="gemini",
+                    provider="f5",
+                    model="f5_spanish",
+                    voice="marco",
                     status="QUEUED",
                 )
                 self.db.add(tts_chunk)
@@ -117,7 +119,7 @@ class BookService:
                     id=job_id,
                     chunk_id=chunk_id,
                     status="QUEUED",
-                    provider="gemini",
+                    provider="f5",
                 )
                 self.db.add(tts_job)
 

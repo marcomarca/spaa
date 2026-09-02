@@ -51,16 +51,31 @@ class GeminiStudioProvider(BaseTTSProvider):
 
 
 class F5TTSProvider(BaseTTSProvider):
-    """Local fallback provider using PyTorch F5-TTS (Stage 2 implementation seam)."""
+    """Local provider using PyTorch F5-TTS with GPU acceleration and reference voice cloning."""
+
+    def __init__(self) -> None:
+        from spaa.adapters.f5_tts_engine import F5TTSEngine
+
+        self.engine = F5TTSEngine()
 
     def get_provider_name(self) -> str:
         return "f5"
 
     async def synthesize(self, request: TTSGenerationRequest, output_wav: Path) -> TTSGenerationResult:
-        # Seam ready for local F5-TTS model weights and 15s reference voice sample
+        res = self.engine.synthesize(
+            text=request.spoken_text,
+            output_wav=output_wav,
+            voice_name=request.voice if request.voice and request.voice != "Puck" else "marco",
+        )
+        if res.get("success"):
+            return TTSGenerationResult(
+                success=True,
+                wav_path=Path(res["wav_path"]),
+                error=None,
+            )
         return TTSGenerationResult(
             success=False,
-            error="F5-TTS local provider no configurado (Etapa 2)",
+            error=res.get("error", "Error desconocido en inferencia F5-TTS"),
         )
 
 

@@ -26,7 +26,9 @@ class TtsQueueService:
         self.chapters_repo = ChapterRepository(db)
         self.workers_repo = TtsWorkerRepository(db)
 
-    def claim_job(self, worker_id: str, profile_alias: str = "", provider: str = "gemini") -> Optional[Dict[str, Any]]:
+    def claim_job(
+        self, worker_id: str, profile_alias: str = "", provider: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         # 1. Recover any expired leases first
         self.jobs_repo.recover_expired_leases()
 

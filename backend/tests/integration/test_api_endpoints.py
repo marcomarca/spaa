@@ -76,7 +76,7 @@ Calcula los ángulos articulares requeridos para alcanzar una pose deseada en el
     # 3. Worker claims first chunk
     claim_resp = client.post(
         "/api/queue/claim",
-        json={"worker_id": "worker-chrome-1", "profile_alias": "Perfil 1", "provider": "gemini"},
+        json={"worker_id": "worker-f5-1", "profile_alias": "Perfil 1", "provider": "f5"},
     )
     assert claim_resp.status_code == 200
     claim_data = claim_resp.json()
