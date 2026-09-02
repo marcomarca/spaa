@@ -99,6 +99,8 @@ async def upload_chunk_wav(
 class ImportDownloadRequest(BaseModel):
     worker_id: str
     downloads_dir: Optional[str] = None
+    exact_filepath: Optional[str] = None
+    min_timestamp: Optional[float] = None
 
 
 @router.post("/import-download/{job_id}")
@@ -112,6 +114,8 @@ def import_downloaded_wav(
         job_id=job_id,
         worker_id=req.worker_id,
         downloads_dir=req.downloads_dir,
+        exact_filepath=req.exact_filepath,
+        min_timestamp=req.min_timestamp,
     )
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("error", "Error importando descarga"))

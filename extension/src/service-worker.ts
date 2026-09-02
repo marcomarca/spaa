@@ -251,6 +251,34 @@ async function sendTabMessage(tabId: number, message: any): Promise<any> {
   });
 }
 
+// Closed-loop Chrome Downloads tracker
+async function waitForDownloadedWav(minTimestampSec: number, timeoutMs = 15000): Promise<string | null> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const items = await chrome.downloads.search({
+        query: ["Generated Audio"],
+        orderBy: ["-startTime"],
+        limit: 5,
+      });
+
+      for (const item of items) {
+        const itemStartSec = new Date(item.startTime).getTime() / 1000;
+        if (itemStartSec >= minTimestampSec - 5) {
+          if (item.state === "complete" && item.exists) {
+            swLog("info", `Lazo cerrado: Archivo descargado detectado -> ${item.filename}`);
+            return item.filename;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 600));
+  }
+  return null;
+}
+
 async function pollAndExecute() {
   const tab = await getAIStudioTab();
   if (!tab || !tab.id) {
@@ -271,6 +299,7 @@ async function pollAndExecute() {
     return;
   }
 
+  const jobStartTimeSec = Date.now() / 1000;
   swLog("info", `Claimed job ${job.job_id} for chunk ${job.chunk_id} (seq ${job.sequence})`);
   currentJob = job;
 
@@ -301,13 +330,17 @@ async function pollAndExecute() {
         }
       }
 
-      // Path B: Fallback pickup from Downloads folder (Generated Audio *.wav)
+      // Path B: Closed-loop pickup from Downloads folder (Generated Audio *.wav)
       if (!uploadSuccess) {
-        await new Promise((r) => setTimeout(r, 1200)); // allow OS write to finish
-        const importRes = await client.importDownloadedWav(job.job_id);
+        const downloadedFile = await waitForDownloadedWav(jobStartTimeSec, 15000);
+        const importRes = await client.importDownloadedWav(job.job_id, {
+          exactFilepath: downloadedFile || undefined,
+          minTimestamp: jobStartTimeSec,
+        });
+
         if (importRes.success) {
           uploadSuccess = true;
-          swLog("info", `Job ${job.job_id} successfully validated from Downloads folder!`);
+          swLog("info", `Job ${job.job_id} validado y confirmado por lazo cerrado (${importRes.downloaded_file || downloadedFile})!`);
         } else {
           lastErr = importRes.error || lastErr || "Fallo al importar de Downloads";
         }

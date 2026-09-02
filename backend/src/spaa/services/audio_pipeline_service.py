@@ -138,9 +138,11 @@ class AudioPipelineService:
         job_id: str,
         worker_id: str,
         downloads_dir: str | None = None,
+        exact_filepath: str | None = None,
+        min_timestamp: float | None = None,
         max_age_seconds: int = 180,
     ) -> Dict[str, Any]:
-        """Finds the newest 'Generated Audio*.wav' or *.wav in Downloads and processes it for the job."""
+        """Closed-loop verification and import of downloaded 'Generated Audio*.wav' file."""
         job = self.jobs_repo.get(job_id)
         if not job or job.worker_id != worker_id:
             return {"success": False, "error": "Job no asignado a este worker o no encontrado"}
@@ -149,29 +151,52 @@ class AudioPipelineService:
         if not chunk:
             return {"success": False, "error": "Chunk asociado no encontrado"}
 
-        target_dir = Path(downloads_dir) if downloads_dir else Path.home() / "Downloads"
-        if not target_dir.exists():
-            return {"success": False, "error": f"Directorio de descargas no encontrado: {target_dir}"}
+        target_file: Path | None = None
 
-        # Search for recent WAV files
-        wav_files = list(target_dir.glob("Generated Audio*.wav")) + list(target_dir.glob("*.wav"))
-        unique_files = list({f.resolve(): f for f in wav_files}.values())
-        if not unique_files:
-            return {"success": False, "error": "No se encontraron archivos WAV en la carpeta de descargas"}
+        if exact_filepath:
+            p = Path(exact_filepath)
+            if p.exists() and p.is_file():
+                target_file = p
 
-        now_ts = datetime.now().timestamp()
-        sorted_files = sorted(unique_files, key=lambda f: f.stat().st_mtime, reverse=True)
-        newest_file = sorted_files[0]
-        file_age = now_ts - newest_file.stat().st_mtime
+        if not target_file:
+            target_dir = Path(downloads_dir) if downloads_dir else Path.home() / "Downloads"
+            if not target_dir.exists():
+                return {"success": False, "error": f"Directorio de descargas no encontrado: {target_dir}"}
 
-        if file_age > max_age_seconds:
-            return {
-                "success": False,
-                "error": f"El archivo más reciente ({newest_file.name}) tiene {int(file_age)}s de antigüedad (máximo permitido: {max_age_seconds}s)",
-            }
+            wav_files = list(target_dir.glob("Generated Audio*.wav")) + list(target_dir.glob("*.wav"))
+            unique_files = list({f.resolve(): f for f in wav_files}.values())
+            if not unique_files:
+                return {"success": False, "error": "No se encontraron archivos WAV en la carpeta de descargas"}
 
-        with open(newest_file, "rb") as f:
+            now_ts = datetime.now().timestamp()
+            sorted_files = sorted(unique_files, key=lambda f: f.stat().st_mtime, reverse=True)
+
+            if min_timestamp:
+                valid_time_files = [f for f in sorted_files if f.stat().st_mtime >= (min_timestamp - 5.0)]
+                if not valid_time_files:
+                    return {
+                        "success": False,
+                        "error": f"Lazo cerrado: No se detectó ninguna descarga posterior a {datetime.fromtimestamp(min_timestamp).strftime('%H:%M:%S')}",
+                    }
+                target_file = valid_time_files[0]
+            else:
+                newest = sorted_files[0]
+                file_age = now_ts - newest.stat().st_mtime
+                if file_age > max_age_seconds:
+                    return {
+                        "success": False,
+                        "error": f"El archivo más reciente ({newest.name}) tiene {int(file_age)}s de antigüedad (máximo permitido: {max_age_seconds}s)",
+                    }
+                target_file = newest
+
+        if target_file.stat().st_size < 1000:
+            return {"success": False, "error": f"El archivo descargado está incompleto o corrupto ({target_file.stat().st_size} bytes)"}
+
+        with open(target_file, "rb") as f:
             res = self.process_chunk_wav_upload(job_id=job_id, worker_id=worker_id, file_obj=f)
+
+        if res.get("success"):
+            res["downloaded_file"] = target_file.name
 
         return res
 

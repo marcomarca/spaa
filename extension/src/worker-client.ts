@@ -124,14 +124,19 @@ export class WorkerClient {
     }
   }
 
-  async importDownloadedWav(jobId: string, downloadsDir?: string): Promise<{ success: boolean; error?: string }> {
+  async importDownloadedWav(
+    jobId: string,
+    options?: { downloadsDir?: string; exactFilepath?: string; minTimestamp?: number }
+  ): Promise<{ success: boolean; error?: string; downloaded_file?: string }> {
     try {
       const res = await fetch(`${this.backendUrl}/api/queue/import-download/${jobId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           worker_id: this.workerId,
-          downloads_dir: downloadsDir,
+          downloads_dir: options?.downloadsDir,
+          exact_filepath: options?.exactFilepath,
+          min_timestamp: options?.minTimestamp,
         }),
       });
 

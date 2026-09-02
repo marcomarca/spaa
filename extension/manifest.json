@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SPAA Gemini AI Studio TTS Worker",
-  "version": "2.9.0",
+  "version": "3.0.0",
   "description": "Worker automatizado supervisado para síntesis TTS en Gemini AI Studio.",
   "permissions": [
     "downloads",
