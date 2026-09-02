@@ -64,10 +64,10 @@ class LocalF5Worker:
 
             # 3. Entregar WAV al pipeline de audio para QA y normalización
             logger.info(f"[F5 Worker] Síntesis exitosa en {synth_res.get('elapsed_seconds')}s. Validando QA...")
-            process_res = pipeline_service.process_audio_chunk(
+            process_res = pipeline_service.process_chunk_wav_file(
                 job_id=job_id,
-                temp_wav_path=temp_wav_path,
                 worker_id=self.worker_id,
+                file_path=temp_wav_path,
             )
 
             # Limpiar archivo temporal

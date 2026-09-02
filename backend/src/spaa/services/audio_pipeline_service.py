@@ -203,6 +203,15 @@ class AudioPipelineService:
 
         return res
 
+    def process_chunk_wav_file(self, job_id: str, worker_id: str, file_path: Path) -> Dict[str, Any]:
+        """Procesa un archivo WAV local existente pasándolo por el pipeline de QA y almacenamiento."""
+        file_path = Path(file_path).resolve()
+        if not file_path.exists():
+            return {"success": False, "error": f"Archivo no encontrado: {file_path}"}
+
+        with open(file_path, "rb") as f:
+            return self.process_chunk_wav_upload(job_id=job_id, worker_id=worker_id, file_obj=f)
+
     def _handle_qa_failure(self, job, chunk, worker_id: str, reason: str):
         now = utc_now()
         job.attempts += 1
