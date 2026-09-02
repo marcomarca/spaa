@@ -35,7 +35,11 @@ manifest.background = {
 };
 manifest.content_scripts = [
   {
-    matches: ["https://aistudio.google.com/*"],
+    matches: manifest.content_scripts?.[0]?.matches || [
+      "https://aistudio.google.com/*",
+      "https://*.aistudio.google.com/*",
+      "*://aistudio.google.com/*",
+    ],
     js: ["content-script.js"],
     run_at: "document_idle",
   },

@@ -3,7 +3,7 @@ import { type ClaimedJob, WorkerClient } from "./worker-client";
 // Read worker settings from storage or defaults
 let workerId = "worker-chrome-1";
 let profileAlias = "Perfil 1";
-let backendUrl = "http://localhost:8000";
+let backendUrl = "http://localhost:8009";
 let isPaused = false;
 
 chrome.storage.local.get(["workerId", "profileAlias", "backendUrl", "isPaused"], (res) => {
@@ -17,7 +17,24 @@ const client = new WorkerClient(backendUrl, workerId, profileAlias);
 let currentJob: ClaimedJob | null = null;
 let isProcessing = false;
 
-console.log(`[SPAA Service Worker] Initialized as ${workerId} (${profileAlias}).`);
+// Circular log buffer for diagnostics
+const MAX_LOGS = 60;
+const workerLogs: { timestamp: string; level: "info" | "warn" | "error"; message: string }[] = [];
+
+function swLog(level: "info" | "warn" | "error", msg: string) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message: msg,
+  };
+  workerLogs.push(entry);
+  if (workerLogs.length > MAX_LOGS) workerLogs.shift();
+  if (level === "error") console.error(`[SPAA SW] ${msg}`);
+  else if (level === "warn") console.warn(`[SPAA SW] ${msg}`);
+  else console.log(`[SPAA SW] ${msg}`);
+}
+
+swLog("info", `Initialized as ${workerId} (${profileAlias}) with backend ${backendUrl}`);
 
 // Listen for popup actions
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -33,9 +50,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "GET_WORKER_LOGS") {
+    sendResponse({
+      workerId,
+      profileAlias,
+      backendUrl,
+      isPaused,
+      currentJob,
+      isProcessing,
+      workerLogs,
+    });
+    return true;
+  }
+
   if (message.type === "SET_PAUSED") {
     isPaused = message.paused;
     chrome.storage.local.set({ isPaused });
+    swLog("info", `Worker pause state changed: ${isPaused ? "PAUSED" : "ACTIVE"}`);
     sendResponse({ success: true, isPaused });
     return true;
   }
@@ -48,6 +79,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     client.profileAlias = profileAlias;
     client.backendUrl = backendUrl;
     chrome.storage.local.set({ workerId, profileAlias, backendUrl });
+    swLog("info", `Worker config updated: ${workerId} (${profileAlias}) -> ${backendUrl}`);
     sendResponse({ success: true });
     return true;
   }
@@ -67,7 +99,7 @@ setInterval(async () => {
   try {
     await pollAndExecute();
   } catch (err) {
-    console.error("[SPAA Service Worker] Loop error:", err);
+    swLog("error", `Loop error: ${err}`);
   }
 }, 4000);
 
@@ -97,7 +129,7 @@ async function pollAndExecute() {
     return;
   }
 
-  console.log(`[SPAA Service Worker] Claimed job ${job.job_id} for chunk ${job.chunk_id} (seq ${job.sequence})`);
+  swLog("info", `Claimed job ${job.job_id} for chunk ${job.chunk_id} (seq ${job.sequence})`);
   currentJob = job;
 
   try {
@@ -109,21 +141,21 @@ async function pollAndExecute() {
     });
 
     if (!result.success || !result.base64_audio) {
-      console.error(`[SPAA Service Worker] Job ${job.job_id} failed:`, result.error);
+      swLog("error", `Job ${job.job_id} failed: ${result.error}`);
       await client.reportStatus(job.job_id, "ERROR", result.error || "Fallo en generación de audio");
     } else {
-      console.log(`[SPAA Service Worker] Job ${job.job_id} synthesis complete. Uploading audio...`);
+      swLog("info", `Job ${job.job_id} synthesis complete. Uploading audio...`);
       await client.reportStatus(job.job_id, "DOWNLOADING");
 
       const uploadRes = await client.uploadBase64Audio(job.job_id, result.base64_audio);
       if (uploadRes.success) {
-        console.log(`[SPAA Service Worker] Job ${job.job_id} successfully processed and QA validated!`);
+        swLog("info", `Job ${job.job_id} successfully processed and QA validated!`);
       } else {
-        console.error(`[SPAA Service Worker] QA validation failed for job ${job.job_id}:`, uploadRes.error);
+        swLog("error", `QA validation failed for job ${job.job_id}: ${uploadRes.error}`);
       }
     }
   } catch (err) {
-    console.error(`[SPAA Service Worker] Unhandled error in job ${job.job_id}:`, err);
+    swLog("error", `Unhandled error in job ${job.job_id}: ${err}`);
     await client.reportStatus(job.job_id, "ERROR", String(err));
   } finally {
     currentJob = null;

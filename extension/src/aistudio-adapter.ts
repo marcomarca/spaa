@@ -344,4 +344,166 @@ export class AIStudioAdapter {
       },
     };
   }
+
+  /**
+   * Generates a deep diagnostic report of all DOM selectors, candidates, and available elements.
+   */
+  static getDetailedDebugReport() {
+    const isPage = AIStudioAdapter.isAIStudioPage();
+    const currentUrl = window.location.href;
+    const pageTitle = document.title;
+    const readyState = document.readyState;
+
+    // Discover custom elements
+    const customElements = Array.from(
+      new Set(
+        Array.from(document.querySelectorAll("*"))
+          .map((el) => el.tagName.toLowerCase())
+          .filter((tag) => tag.startsWith("ms-") || tag.startsWith("mat-") || tag.startsWith("cdk-"))
+      )
+    );
+
+    // Helper to test selectors
+    const testCandidateSelectors = (selectors: string[]) => {
+      const results: { selector: string; matched: boolean; htmlSnippet?: string; attributes?: Record<string, string> }[] = [];
+      let matchedEl: HTMLElement | null = null;
+      let matchedSel: string | null = null;
+
+      for (const sel of selectors) {
+        let el: HTMLElement | null = null;
+        try {
+          el = document.querySelector(sel) as HTMLElement | null;
+        } catch {
+          // invalid selector syntax in browser
+        }
+        const matched = Boolean(el);
+        if (matched && !matchedEl && el) {
+          matchedEl = el;
+          matchedSel = sel;
+        }
+
+        const attrs: Record<string, string> = {};
+        if (el) {
+          for (let i = 0; i < el.attributes.length; i++) {
+            const attr = el.attributes[i];
+            attrs[attr.name] = attr.value;
+          }
+        }
+
+        results.push({
+          selector: sel,
+          matched,
+          htmlSnippet: el ? el.outerHTML.slice(0, 200) : undefined,
+          attributes: el ? attrs : undefined,
+        });
+      }
+
+      return {
+        matched: Boolean(matchedEl),
+        matchedSelector: matchedSel,
+        elementSnippet: matchedEl ? matchedEl.outerHTML.slice(0, 300) : undefined,
+        candidates: results,
+      };
+    };
+
+    // Components to test
+    const components = {
+      textPromptInput: testCandidateSelectors([
+        'textarea[aria-label="Enter a prompt"]',
+        ".transcript-text textarea",
+        'ms-speech-block textarea[aria-label="Speech block text"]',
+        "ms-speech-block textarea",
+        'textarea[placeholder*="That\'s a great idea"]',
+        'textarea[placeholder*="tags"]',
+        ".speech-prompt-main textarea",
+      ]),
+      sceneInput: testCandidateSelectors([
+        'textarea[aria-label="Scene"]',
+        'ms-autosize-textarea[arialabel="Scene"] textarea',
+        'textarea[placeholder*="Scene" i]',
+      ]),
+      sampleContextInput: testCandidateSelectors([
+        'textarea[aria-label="Sample Context"]',
+        'ms-autosize-textarea[arialabel="Sample Context"] textarea',
+        'textarea[placeholder*="Context" i]',
+      ]),
+      runButton: testCandidateSelectors([
+        "ms-run-button button",
+        "button:has(.run-button-label)",
+        "button.run-button",
+        'button[aria-label="Run"]',
+        'button[aria-label="Generate"]',
+        'button[data-test-id="run-button"]',
+      ]),
+      modelSelector: testCandidateSelectors([
+        "ms-model-selector button.model-selector-card",
+        "ms-model-selector",
+        '[data-test-id="model-name"]',
+      ]),
+      voiceSelector: testCandidateSelectors([
+        "ms-voice-settings .active-voice-card-trigger",
+        "ms-voice-settings",
+        ".voice-display-name",
+      ]),
+      musicPlayer: testCandidateSelectors([
+        "ms-music-player",
+        "ms-music-player audio",
+        "audio",
+      ]),
+      downloadButton: testCandidateSelectors([
+        'ms-music-player button[aria-label="Download"]',
+        "ms-music-player button.download-button",
+        "button.download-button",
+        'button[aria-label*="Download" i]',
+      ]),
+    };
+
+    // Inspect all textarea elements in DOM
+    const allTextareas = Array.from(document.querySelectorAll("textarea")).map((ta, idx) => ({
+      index: idx + 1,
+      tagName: ta.tagName.toLowerCase(),
+      id: ta.id || undefined,
+      name: ta.name || undefined,
+      ariaLabel: ta.getAttribute("aria-label") || undefined,
+      placeholder: ta.placeholder || undefined,
+      className: ta.className || undefined,
+      parentTag: ta.parentElement?.tagName.toLowerCase(),
+      valuePreview: ta.value.slice(0, 50),
+    }));
+
+    // Inspect all buttons in DOM (up to 30)
+    const allButtons = Array.from(document.querySelectorAll("button"))
+      .slice(0, 30)
+      .map((btn, idx) => ({
+        index: idx + 1,
+        text: btn.innerText.trim().slice(0, 40) || undefined,
+        ariaLabel: btn.getAttribute("aria-label") || undefined,
+        className: btn.className || undefined,
+        disabled: btn.disabled,
+        parentTag: btn.parentElement?.tagName.toLowerCase(),
+      }));
+
+    // Error banner
+    const visibleError = AIStudioAdapter.readVisibleError();
+
+    return {
+      timestamp: new Date().toISOString(),
+      page: {
+        isAIStudioPage: isPage,
+        url: currentUrl,
+        title: pageTitle,
+        readyState,
+      },
+      customElements,
+      components,
+      allTextareas,
+      allButtons,
+      visibleError,
+      values: {
+        selectedModel: AIStudioAdapter.getSelectedModel() || "No detectado",
+        selectedVoice: AIStudioAdapter.getSelectedVoice() || "No detectado",
+        hasAudioSrc: Boolean(AIStudioAdapter.getGeneratedAudioSrc()),
+      },
+    };
+  }
 }

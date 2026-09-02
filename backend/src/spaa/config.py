@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     app_name: str = "SPAA - Sistema Personal de Audiolibros y Aprendizaje"
     environment: str = "development"
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8009
 
     # Paths
     base_dir: Path = Field(

@@ -123,6 +123,60 @@
       color: #ffffff;
     }
 
+    /* Copy to Clipboard Button */
+    .btn-copy-debug {
+      width: 100%;
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+      color: #ffffff;
+      border: 1px solid #38bdf8;
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+    }
+    .btn-copy-debug:hover {
+      background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%);
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.5);
+    }
+    .btn-copy-success {
+      background: #10b981 !important;
+      border-color: #34d399 !important;
+      color: #ffffff !important;
+      box-shadow: 0 0 14px rgba(52, 211, 153, 0.5) !important;
+    }
+
+    .card-header-flex {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .card-header-flex .card-title {
+      margin-bottom: 0;
+    }
+    .btn-mini-copy {
+      background: #334155;
+      border: 1px solid #475569;
+      color: #94a3b8;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      padding: 2px 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-mini-copy:hover {
+      color: #38bdf8;
+      border-color: #38bdf8;
+    }
+
     /* Console Log */
     .console-box {
       background: #090d16;
@@ -171,6 +225,10 @@
     <h1>SPAA AI Studio Worker</h1>
     <span class="badge badge-active" id="status-badge">🟢 Activo</span>
   </header>
+
+  <button class="btn-copy-debug" id="btn-copy-debug">
+    📋 Copiar Reporte y Diagnóstico para Depuración
+  </button>
 
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-btn-tests">🧪 Pruebas en Caliente</button>
@@ -244,7 +302,10 @@
     </div>
 
     <div class="card">
-      <div class="card-title">📟 Registro de Pruebas</div>
+      <div class="card-header-flex">
+        <div class="card-title">📟 Registro de Pruebas</div>
+        <button class="btn-mini-copy" id="btn-copy-logs" title="Copiar solo logs de la consola">Copiar logs</button>
+      </div>
       <div class="console-box" id="test-console">Listo para pruebas en caliente.</div>
     </div>
   </div>
@@ -263,7 +324,7 @@
       </div>
       <div class="form-group">
         <label for="backendUrlInput">Servidor SPAA:</label>
-        <input type="text" id="backendUrlInput" value="http://localhost:8000" />
+        <input type="text" id="backendUrlInput" value="http://localhost:8009" />
       </div>
       <button class="btn btn-save" id="saveConfigBtn">Guardar Configuración</button>
     </div>

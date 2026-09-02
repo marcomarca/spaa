@@ -17,7 +17,7 @@ Sistema personal offline-first para conversión de material de estudio en Markdo
 cd backend
 uv run ruff check .
 uv run pytest
-uv run uvicorn spaa.api.main:app --reload --port 8000
+uv run uvicorn spaa.api.main:app --reload --port 8009
 ```
 
 ### Frontend (TypeScript / Bun)

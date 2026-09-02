@@ -13,7 +13,7 @@ def main():
     parser.add_argument("--title", type=str, help="Book title (defaults to filename)")
     parser.add_argument("--author", type=str, default="", help="Author name")
     parser.add_argument("--language", type=str, default="es", choices=["es", "en"], help="Book language")
-    parser.add_argument("--server", type=str, default="http://localhost:8000", help="SPAA Server URL")
+    parser.add_argument("--server", type=str, default="http://localhost:8009", help="SPAA Server URL")
 
     args = parser.parse_args()
 

@@ -18,7 +18,7 @@ export class WorkerClient {
   public workerId: string;
   public profileAlias: string;
 
-  constructor(backendUrl = "http://localhost:8000", workerId = "worker-chrome-1", profileAlias = "Perfil 1") {
+  constructor(backendUrl = "http://localhost:8009", workerId = "worker-chrome-1", profileAlias = "Perfil 1") {
     this.backendUrl = backendUrl;
     this.workerId = workerId;
     this.profileAlias = profileAlias;

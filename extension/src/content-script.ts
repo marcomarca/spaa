@@ -1,6 +1,75 @@
 import { AIStudioAdapter } from "./aistudio-adapter";
 
-console.log("[SPAA Content Script] Loaded and ready for live hot-testing.");
+// DevTools and Console Interceptor
+export interface PageLogEntry {
+  timestamp: string;
+  level: "log" | "info" | "warn" | "error";
+  message: string;
+  source?: string;
+}
+
+const pageLogs: PageLogEntry[] = [];
+const MAX_PAGE_LOGS = 150;
+
+function recordLog(level: "log" | "info" | "warn" | "error", args: any[], source = "content-script") {
+  try {
+    const formatted = args
+      .map((arg) => {
+        if (typeof arg === "string") return arg;
+        if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || ""}`;
+        try {
+          return JSON.stringify(arg);
+        } catch {
+          return String(arg);
+        }
+      })
+      .join(" ");
+
+    pageLogs.push({
+      timestamp: new Date().toISOString(),
+      level,
+      message: formatted,
+      source,
+    });
+    if (pageLogs.length > MAX_PAGE_LOGS) pageLogs.shift();
+  } catch {
+    // Ignore formatting errors
+  }
+}
+
+// Hook console
+const origLog = console.log.bind(console);
+const origInfo = console.info.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+
+console.log = (...args: any[]) => {
+  recordLog("log", args);
+  origLog(...args);
+};
+console.info = (...args: any[]) => {
+  recordLog("info", args);
+  origInfo(...args);
+};
+console.warn = (...args: any[]) => {
+  recordLog("warn", args);
+  origWarn(...args);
+};
+console.error = (...args: any[]) => {
+  recordLog("error", args);
+  origError(...args);
+};
+
+// Window unhandled errors and rejections
+window.addEventListener("error", (event) => {
+  recordLog("error", [`[Window Error] ${event.message} at ${event.filename}:${event.lineno}:${event.colno}`, event.error], "window");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  recordLog("error", [`[Unhandled Promise Rejection] ${event.reason?.message || event.reason}`], "window");
+});
+
+recordLog("info", ["[SPAA Content Script] Loaded and ready for live hot-testing."]);
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -16,6 +85,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "TEST_DIAGNOSE") {
     const diag = AIStudioAdapter.diagnoseDOM();
     sendResponse(diag);
+    return true;
+  }
+
+  // 1.1 Detailed Debug Report
+  if (message.type === "GET_DETAILED_DEBUG_REPORT") {
+    const report = AIStudioAdapter.getDetailedDebugReport();
+    sendResponse({
+      ...report,
+      pageLogs,
+    });
     return true;
   }
 
