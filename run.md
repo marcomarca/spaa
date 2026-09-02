@@ -1,12 +1,34 @@
 # 🚀 Guía Rápida de Comandos — SPAA Project
 
-Comandos de terminal más frecuentes para desarrollo, pruebas, linter, compilación y despliegue local del ecosistema **SPAA**.
+Comandos de terminal más frecuentes para desarrollo, síntesis local de audiolibros, pruebas, linter, compilación y despliegue del ecosistema **SPAA**.
 
 ---
 
-## ⚡ 0. Iniciar Todo el Proyecto con un Solo Comando
+## 🎙️ 0. Síntesis Local de Audiolibros con F5-TTS (Prioridad Principal)
 
-Compila la extensión de Chrome y arranca el Backend y Frontend simultáneamente:
+El motor principal y predeterminado de SPAA es **F5-TTS en Español** ejecutándose directamente en la GPU local (NVIDIA CUDA):
+
+```powershell
+# Iniciar worker secuencial continuo (procesa toda la cola hasta terminar)
+.\scripts\run_f5_worker.ps1
+```
+
+```powershell
+# Procesar un único bloque de prueba y finalizar
+.\scripts\run_f5_worker.ps1 -Once
+```
+
+> **Características del Worker F5:**
+> - ⚡ **Aceleración GPU:** Inferencia local ultrarrápida con PyTorch CUDA en NVIDIA GeForce RTX.
+> - 🎭 **Clonación de Voz:** Perfil "Marco" con audio de referencia de alta fidelidad.
+> - 🛡️ **Tolerancia a Fallos:** Puedes pausar (`Ctrl+C`) o apagar la PC en cualquier momento; el progreso se guarda en SQLite y reanuda sin pérdidas.
+> - 📦 **Compilación Automática:** Concatena los bloques y compila el `.mp3` final de cada capítulo al completar su último bloque.
+
+---
+
+## ⚡ 1. Iniciar Aplicación (Backend + Frontend)
+
+Para interactuar con la aplicación visual (reproductor de audiolibros, tarjetas de estudio FSRS y biblioteca):
 
 ```powershell
 # Windows (PowerShell) - Desde la raíz del repositorio
@@ -19,13 +41,18 @@ Compila la extensión de Chrome y arranca el Backend y Frontend simultáneamente
 ```
 
 > **Servicios que levanta:**
-> - 🧩 **Extensión:** Compila `extension/dist`
-> - 🐍 **Backend:** `http://localhost:8009` (Swagger: `http://localhost:8009/docs`)
-> - ⚛️ **Frontend:** `http://localhost:5173`
+> - 🐍 **Backend API:** `http://localhost:8009` (Swagger: `http://localhost:8009/docs`)
+> - ⚛️ **Frontend Web/App:** `http://localhost:5173`
+> - 🧩 **Extensión (Opcional):** Compila `extension/dist`
 
 ---
 
-## 1. ⚙️ Inicio de Servicios por Separado
+## 2. ⚙️ Inicio de Servicios por Separado
+
+### 🎙️ Worker F5-TTS Local (GPU)
+```powershell
+.\scripts\run_f5_worker.ps1
+```
 
 ### 🐍 Backend (FastAPI / uv)
 Inicia el servidor API en `http://localhost:8009` con recarga automática:
@@ -49,7 +76,7 @@ cd frontend
 bun run dev
 ```
 
-### 🧩 Extensión de Chrome (Gemini AI Studio Worker)
+### 🧩 Extensión de Chrome (Auxiliar Opcional)
 Compila los scripts en TypeScript hacia la carpeta `extension/dist`:
 ```bash
 cd extension
