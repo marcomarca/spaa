@@ -24,9 +24,7 @@ class TtsQueueService:
         self.chunks_repo = TtsChunkRepository(db)
         self.workers_repo = TtsWorkerRepository(db)
 
-    def claim_job(
-        self, worker_id: str, profile_alias: str = "", provider: str = "gemini"
-    ) -> Optional[Dict[str, Any]]:
+    def claim_job(self, worker_id: str, profile_alias: str = "", provider: str = "gemini") -> Optional[Dict[str, Any]]:
         # 1. Recover any expired leases first
         self.jobs_repo.recover_expired_leases()
 
@@ -81,11 +79,7 @@ class TtsQueueService:
 
         if job_id:
             job = self.jobs_repo.get(job_id)
-            if (
-                job
-                and job.worker_id == worker_id
-                and job.status in ["CLAIMED", "GENERATING", "DOWNLOADING"]
-            ):
+            if job and job.worker_id == worker_id and job.status in ["CLAIMED", "GENERATING", "DOWNLOADING"]:
                 now = utc_now()
                 job.lease_until = now + timedelta(seconds=settings.lease_duration_seconds)
                 job.updated_at = now

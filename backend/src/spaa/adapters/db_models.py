@@ -18,42 +18,30 @@ class BookModel(Base):
     author: Mapped[str] = mapped_column(String(255), default="")
     mode: Mapped[str] = mapped_column(String(32), default="auto")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
-    variants: Mapped[list["BookVariantModel"]] = relationship(
-        back_populates="book", cascade="all, delete-orphan"
-    )
-    chapters: Mapped[list["ChapterModel"]] = relationship(
-        back_populates="book", cascade="all, delete-orphan"
-    )
+    variants: Mapped[list["BookVariantModel"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+    chapters: Mapped[list["ChapterModel"]] = relationship(back_populates="book", cascade="all, delete-orphan")
 
 
 class BookVariantModel(Base):
     __tablename__ = "book_variants"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    book_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("books.id", ondelete="CASCADE"), nullable=False
-    )
+    book_id: Mapped[str] = mapped_column(String(36), ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
     language: Mapped[str] = mapped_column(String(8), default="es")
     source_filename: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     book: Mapped["BookModel"] = relationship(back_populates="variants")
-    chapters: Mapped[list["ChapterModel"]] = relationship(
-        back_populates="variant", cascade="all, delete-orphan"
-    )
+    chapters: Mapped[list["ChapterModel"]] = relationship(back_populates="variant", cascade="all, delete-orphan")
 
 
 class ChapterModel(Base):
     __tablename__ = "chapters"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    book_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("books.id", ondelete="CASCADE"), nullable=False
-    )
+    book_id: Mapped[str] = mapped_column(String(36), ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
     variant_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("book_variants.id", ondelete="CASCADE"), nullable=False
     )
@@ -68,27 +56,19 @@ class ChapterModel(Base):
     audio_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_ready: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     book: Mapped["BookModel"] = relationship(back_populates="chapters")
     variant: Mapped["BookVariantModel"] = relationship(back_populates="chapters")
-    sections: Mapped[list["SectionModel"]] = relationship(
-        back_populates="chapter", cascade="all, delete-orphan"
-    )
-    chunks: Mapped[list["TtsChunkModel"]] = relationship(
-        back_populates="chapter", cascade="all, delete-orphan"
-    )
+    sections: Mapped[list["SectionModel"]] = relationship(back_populates="chapter", cascade="all, delete-orphan")
+    chunks: Mapped[list["TtsChunkModel"]] = relationship(back_populates="chapter", cascade="all, delete-orphan")
 
 
 class SectionModel(Base):
     __tablename__ = "sections"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    chapter_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False
-    )
+    chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, default=1)
     title: Mapped[str] = mapped_column(String(255), default="")
     level: Mapped[int] = mapped_column(Integer, default=2)
@@ -104,9 +84,7 @@ class TtsChunkModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     book_id: Mapped[str] = mapped_column(String(36), nullable=False)
     variant_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    chapter_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False
-    )
+    chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
     section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     sequence: Mapped[int] = mapped_column(Integer, default=1)
     source_text: Mapped[str] = mapped_column(Text, default="")
@@ -122,14 +100,10 @@ class TtsChunkModel(Base):
     duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
     qa_status: Mapped[str] = mapped_column(String(32), default="PENDING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     chapter: Mapped["ChapterModel"] = relationship(back_populates="chunks")
-    job: Mapped["TtsJobModel"] = relationship(
-        back_populates="chunk", uselist=False, cascade="all, delete-orphan"
-    )
+    job: Mapped["TtsJobModel"] = relationship(back_populates="chunk", uselist=False, cascade="all, delete-orphan")
 
 
 class TtsJobModel(Base):
@@ -149,9 +123,7 @@ class TtsJobModel(Base):
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     chunk: Mapped["TtsChunkModel"] = relationship(back_populates="job")
 
@@ -164,9 +136,7 @@ class TtsWorkerModel(Base):
     status: Mapped[str] = mapped_column(String(32), default="READY")
     current_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     last_heartbeat: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    ai_studio_url: Mapped[str] = mapped_column(
-        String(255), default="https://aistudio.google.com/live"
-    )
+    ai_studio_url: Mapped[str] = mapped_column(String(255), default="https://aistudio.google.com/live")
     voice: Mapped[str] = mapped_column(String(64), default="Puck")
 
 
@@ -180,9 +150,7 @@ class PlaybackStateModel(Base):
     position_ms: Mapped[int] = mapped_column(Integer, default=0)
     speed: Mapped[float] = mapped_column(Float, default=1.0)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
 class SyncEventModel(Base):
@@ -213,9 +181,7 @@ class CheatEntryModel(Base):
     chatgpt_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_for_memory: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
 class FsrsCardModel(Base):
@@ -226,9 +192,40 @@ class FsrsCardModel(Base):
     due: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     stability: Mapped[float] = mapped_column(Float, default=1.0)
     difficulty: Mapped[float] = mapped_column(Float, default=5.0)
-    state: Mapped[int] = mapped_column(
-        Integer, default=0
-    )  # 0=New, 1=Learning, 2=Review, 3=Relearning
+    state: Mapped[int] = mapped_column(Integer, default=0)  # 0=New, 1=Learning, 2=Review, 3=Relearning
     last_review: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reps: Mapped[int] = mapped_column(Integer, default=0)
     lapses: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class QuestionModel(Base):
+    __tablename__ = "questions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
+    question_type: Mapped[str] = mapped_column(
+        String(32), default="feynman"
+    )  # feynman, why_chain, application, contrast, counterexample
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_criteria: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    answers: Mapped[list["AnswerModel"]] = relationship(back_populates="question", cascade="all, delete-orphan")
+
+
+class AnswerModel(Base):
+    __tablename__ = "answers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
+    user_response: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="ANSWERED")  # ANSWERED, PENDING_REVIEW, REVIEWED
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    correct_points: Mapped[str] = mapped_column(Text, default="[]")
+    missing_points: Mapped[str] = mapped_column(Text, default="[]")
+    misconceptions: Mapped[str] = mapped_column(Text, default="[]")
+    evaluator_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    question: Mapped["QuestionModel"] = relationship(back_populates="answers")

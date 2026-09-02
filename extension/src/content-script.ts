@@ -280,7 +280,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
-async function executeJob(job: { job_id: string; spoken_text: string }) {
+async function executeJob(job: {
+  job_id: string;
+  spoken_text: string;
+  scene?: string;
+  sample_context?: string;
+}) {
   console.log(`[SPAA Content Script] Starting TTS generation for job ${job.job_id}...`);
 
   AIStudioAdapter.ensureTextMode();
@@ -298,11 +303,29 @@ async function executeJob(job: { job_id: string; spoken_text: string }) {
     return { success: false, error: "Campo de texto 'Enter a prompt' no encontrado en AI Studio" };
   }
 
+  // Optional Scene / Context injection if present
+  if (job.scene) {
+    const sceneInput = AIStudioAdapter.findSceneInput();
+    if (sceneInput) {
+      AIStudioAdapter.setPromptText(sceneInput, job.scene);
+      AIStudioAdapter.highlightElement(sceneInput, "Escena SPAA", "#a855f7");
+    }
+  }
+
+  if (job.sample_context) {
+    const ctxInput = AIStudioAdapter.findSampleContextInput();
+    if (ctxInput) {
+      AIStudioAdapter.setPromptText(ctxInput, job.sample_context);
+      AIStudioAdapter.highlightElement(ctxInput, "Contexto SPAA", "#ec4899");
+    }
+  }
+
   const previousAudio = AIStudioAdapter.getGeneratedAudioSrc();
   const setOk = AIStudioAdapter.setPromptText(input, job.spoken_text);
   if (!setOk) {
     return { success: false, error: "Fallo al insertar el texto en el textarea" };
   }
+  AIStudioAdapter.highlightElement(input, `Job ${job.job_id.slice(0, 8)}`, "#38bdf8");
 
   await sleep(400);
 
@@ -311,6 +334,7 @@ async function executeJob(job: { job_id: string; spoken_text: string }) {
     return { success: false, error: "Botón 'Run' no encontrado en el DOM" };
   }
 
+  AIStudioAdapter.highlightElement(runBtn, "Ejecutando...", "#10b981");
   AIStudioAdapter.clickRun();
   console.log("[SPAA Content Script] 'Run' button clicked. Waiting for audio synthesis...");
 
@@ -328,6 +352,11 @@ async function executeJob(job: { job_id: string; spoken_text: string }) {
     const audioSrc = AIStudioAdapter.getGeneratedAudioSrc();
     if (audioSrc && audioSrc !== previousAudio) {
       console.log("[SPAA Content Script] Generated audio captured from player!");
+
+      const playerEl = document.querySelector<HTMLElement>("ms-music-player");
+      if (playerEl) {
+        AIStudioAdapter.highlightElement(playerEl, "Audio Capturado!", "#22c55e");
+      }
 
       let base64Audio = "";
       if (audioSrc.startsWith("data:audio")) {

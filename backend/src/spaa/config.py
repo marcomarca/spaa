@@ -13,12 +13,8 @@ class Settings(BaseSettings):
     port: int = 8009
 
     # Paths
-    base_dir: Path = Field(
-        default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent
-    )
-    data_dir: Path = Field(
-        default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent / "data"
-    )
+    base_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent)
+    data_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent / "data")
 
     # Audio & QA
     mp3_bitrate_kbps: int = 96

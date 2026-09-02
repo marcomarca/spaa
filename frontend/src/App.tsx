@@ -1,28 +1,37 @@
-import { BookOpen, Headphones, Sparkles, Wifi, WifiOff } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen, Brain, Headphones, HelpCircle, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { TransportPlayer } from "./components/TransportPlayer";
-import type { Book, Chapter, OfflineManifest } from "./domain/types";
+import type { Book, Chapter, NetworkSyncState, OfflineManifest } from "./domain/types";
 import { LibraryView } from "./features/LibraryView";
+import { StudyQuestionsView } from "./features/StudyQuestionsView";
 import { StudyView } from "./features/StudyView";
 import { WorkspaceView } from "./features/WorkspaceView";
+import { syncManager } from "./services/SyncManager";
 import { api } from "./services/api";
 import { LocalStorageAdapter } from "./services/storage";
 
-type Tab = "player" | "library" | "workspace" | "study";
+type Tab = "player" | "library" | "workspace" | "study" | "questions";
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>("player");
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBook, setActiveBook] = useState<Book | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
-  const [isOnline, setIsOnline] = useState(true);
+  const [syncState, setSyncState] = useState<NetworkSyncState>(syncManager.getState());
   const [offlineHours, setOfflineHours] = useState<number>(12.0);
 
-  const loadData = async () => {
+  useEffect(() => {
+    const unsub = syncManager.subscribe((state) => {
+      setSyncState(state);
+    });
+    syncManager.probeBestConnection();
+    return unsub;
+  }, []);
+
+  const loadData = useCallback(async () => {
     try {
       const bookList = await api.fetchBooks();
       setBooks(bookList);
-      setIsOnline(true);
 
       // Load offline buffer manifest
       try {
@@ -51,13 +60,13 @@ export function App() {
         }
       }
     } catch {
-      setIsOnline(false);
+      // Offline fallback
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const handleSelectChapter = (book: Book, chapter: Chapter) => {
     setActiveBook(book);
@@ -66,13 +75,47 @@ export function App() {
     setActiveTab("player");
   };
 
+  const getStatusLabel = () => {
+    if (!syncState.isOnline) return "Offline";
+    if (syncState.mode === "lan") return "LAN";
+    if (syncState.mode === "tailscale") return "Tailscale";
+    return "Servidor Local";
+  };
+
   return (
     <div className="app-container">
       <header className="header-status">
-        <div className="status-badge" style={{ color: isOnline ? "#10b981" : "#94a3b8" }}>
-          {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-          <span>{isOnline ? "LAN Conectado" : "Offline"}</span>
-        </div>
+        <button
+          type="button"
+          className="status-badge"
+          style={{
+            color: syncState.isOnline ? "#10b981" : "#94a3b8",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+          onClick={() => syncManager.probeBestConnection()}
+          title="Haz clic para re-detectar conexión LAN/Tailscale"
+        >
+          {syncState.isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+          <span>{getStatusLabel()}</span>
+          {syncState.pendingEventsCount > 0 && (
+            <span
+              style={{
+                fontSize: "0.75rem",
+                background: "#f59e0b",
+                color: "#000",
+                padding: "1px 5px",
+                borderRadius: "10px",
+              }}
+            >
+              {syncState.pendingEventsCount} pend
+            </span>
+          )}
+        </button>
         <div className="buffer-badge">
           <span>Buffer: {offlineHours.toFixed(1)}h</span>
         </div>
@@ -101,6 +144,9 @@ export function App() {
         {activeTab === "study" && (
           <StudyView activeBook={activeBook} activeChapter={activeChapter} />
         )}
+        {activeTab === "questions" && (
+          <StudyQuestionsView activeBook={activeBook} activeChapter={activeChapter} />
+        )}
       </main>
 
       <nav className="nav-bar">
@@ -122,19 +168,27 @@ export function App() {
         </button>
         <button
           type="button"
+          className={`nav-item ${activeTab === "study" ? "active" : ""}`}
+          onClick={() => setActiveTab("study")}
+        >
+          <Brain size={20} />
+          <span>Cheats</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-item ${activeTab === "questions" ? "active" : ""}`}
+          onClick={() => setActiveTab("questions")}
+        >
+          <HelpCircle size={20} />
+          <span>Examen</span>
+        </button>
+        <button
+          type="button"
           className={`nav-item ${activeTab === "workspace" ? "active" : ""}`}
           onClick={() => setActiveTab("workspace")}
         >
           <Sparkles size={20} />
-          <span>AI Workspace</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-item ${activeTab === "study" ? "active" : ""}`}
-          onClick={() => setActiveTab("study")}
-        >
-          <BookOpen size={20} />
-          <span>Study</span>
+          <span>Workspace</span>
         </button>
       </nav>
     </div>

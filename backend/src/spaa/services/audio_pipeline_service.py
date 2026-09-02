@@ -27,9 +27,7 @@ class AudioPipelineService:
         self.chapters_repo = ChapterRepository(db)
         self.workers_repo = TtsWorkerRepository(db)
 
-    def process_chunk_wav_upload(
-        self, job_id: str, worker_id: str, file_obj: BinaryIO
-    ) -> Dict[str, Any]:
+    def process_chunk_wav_upload(self, job_id: str, worker_id: str, file_obj: BinaryIO) -> Dict[str, Any]:
         job = self.jobs_repo.get(job_id)
         if not job or job.worker_id != worker_id:
             return {"success": False, "error": "Job no asignado a este worker o no encontrado"}
@@ -100,9 +98,7 @@ class AudioPipelineService:
             return False
 
         # All chunks must be READY and have a valid WAV path
-        all_ready = all(
-            c.status == "READY" and c.wav_path and Path(c.wav_path).exists() for c in chunks
-        )
+        all_ready = all(c.status == "READY" and c.wav_path and Path(c.wav_path).exists() for c in chunks)
         if not all_ready:
             return False
 

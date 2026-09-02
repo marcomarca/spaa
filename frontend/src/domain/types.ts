@@ -58,3 +58,48 @@ export interface OfflineManifest {
   total_duration_hours: number;
   chapters: OfflineChapterItem[];
 }
+
+export type QuestionType = "feynman" | "why_chain" | "application" | "contrast" | "counterexample";
+
+export interface Question {
+  id: string;
+  chapter_id: string;
+  question_type: QuestionType;
+  prompt_text: string;
+  expected_criteria: string;
+  created_at: string;
+}
+
+export interface Answer {
+  id: string;
+  question_id: string;
+  user_response: string;
+  status: "ANSWERED" | "PENDING_REVIEW" | "REVIEWED";
+  score?: number | null;
+  correct_points: string;
+  missing_points: string;
+  misconceptions: string;
+  evaluator_feedback?: string | null;
+  evaluated_at?: string | null;
+  created_at: string;
+}
+
+export interface EvaluationPayload {
+  score: number;
+  correct_points: string[];
+  missing_points: string[];
+  misconceptions: string[];
+  feedback: string;
+  fsrs_rating?: number;
+}
+
+export type ConnectionMode = "lan" | "tailscale" | "localhost" | "offline";
+
+export interface NetworkSyncState {
+  mode: ConnectionMode;
+  activeUrl: string;
+  isOnline: boolean;
+  pendingEventsCount: number;
+  offlineBufferedHours: number;
+  storageUsedBytes: number;
+}

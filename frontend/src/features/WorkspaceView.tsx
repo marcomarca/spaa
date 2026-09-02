@@ -1,6 +1,7 @@
-import { Check, Copy, Sparkles } from "lucide-react";
-import { useState } from "react";
-import type { Book, Chapter } from "../domain/types";
+import { Check, CheckCircle, Copy, HelpCircle, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { Answer, Book, Chapter } from "../domain/types";
+import { api } from "../services/api";
 
 interface WorkspaceViewProps {
   books: Book[];
@@ -9,11 +10,33 @@ interface WorkspaceViewProps {
 }
 
 export function WorkspaceView({ activeBook, activeChapter }: WorkspaceViewProps) {
+  const [activeTab, setActiveTab] = useState<"prompts" | "evaluations">("prompts");
   const [selectedTemplate, setSelectedTemplate] = useState("feynman");
   const [copiedSource, setCopiedSource] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [chatGptResult, setChatGptResult] = useState("");
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Evaluation tab state
+  const [pendingAnswers, setPendingAnswers] = useState<Answer[]>([]);
+  const [copiedEvalMap, setCopiedEvalMap] = useState<Record<string, boolean>>({});
+  const [evalJsonMap, setEvalJsonMap] = useState<Record<string, string>>({});
+  const [evalSuccessMap, setEvalSuccessMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (activeTab === "evaluations") {
+      loadPendingAnswers();
+    }
+  }, [activeTab]);
+
+  const loadPendingAnswers = async () => {
+    try {
+      const answers = await api.fetchPendingAnswers();
+      setPendingAnswers(answers);
+    } catch {
+      setPendingAnswers([]);
+    }
+  };
 
   const promptTemplates: Record<string, string> = {
     feynman:
@@ -47,6 +70,49 @@ export function WorkspaceView({ activeBook, activeChapter }: WorkspaceViewProps)
     }
   };
 
+  const handleCopyEvalPrompt = async (answerId: string) => {
+    try {
+      const data = await api.generateEvaluationPrompt(answerId);
+      navigator.clipboard.writeText(data.prompt);
+      setCopiedEvalMap((prev) => ({ ...prev, [answerId]: true }));
+      setTimeout(() => setCopiedEvalMap((prev) => ({ ...prev, [answerId]: false })), 2000);
+    } catch (err) {
+      console.error("Error copying eval prompt:", err);
+    }
+  };
+
+  const handleProcessEvaluation = async (answerId: string) => {
+    const rawJson = evalJsonMap[answerId];
+    if (!rawJson) return;
+
+    try {
+      // Extract json from markdown if wrapped in ```json
+      let cleanJson = rawJson.trim();
+      if (cleanJson.includes("```json")) {
+        cleanJson = cleanJson.split("```json")[1].split("```")[0].trim();
+      } else if (cleanJson.includes("```")) {
+        cleanJson = cleanJson.split("```")[1].split("```")[0].trim();
+      }
+
+      const parsed = JSON.parse(cleanJson);
+      await api.submitEvaluation(answerId, {
+        score: typeof parsed.score === "number" ? parsed.score : 8.0,
+        correct_points: Array.isArray(parsed.correct_points) ? parsed.correct_points : [],
+        missing_points: Array.isArray(parsed.missing_points) ? parsed.missing_points : [],
+        misconceptions: Array.isArray(parsed.misconceptions) ? parsed.misconceptions : [],
+        feedback: parsed.feedback || "Evaluación procesada exitosamente.",
+        fsrs_rating: parsed.suggested_fsrs_rating || 3,
+      });
+
+      setEvalSuccessMap((prev) => ({ ...prev, [answerId]: true }));
+      setTimeout(() => {
+        loadPendingAnswers();
+      }, 1500);
+    } catch (err) {
+      alert(`Error al procesar JSON de evaluación: ${err}`);
+    }
+  };
+
   const handleSaveResult = () => {
     if (!chatGptResult.trim()) return;
     setSavedSuccess(true);
@@ -55,128 +121,294 @@ export function WorkspaceView({ activeBook, activeChapter }: WorkspaceViewProps)
 
   return (
     <div>
-      <div style={{ marginBottom: "16px" }}>
-        <h2 style={{ fontSize: "1.2rem", fontWeight: "700" }}>AI Workspace (ChatGPT Manual)</h2>
-        <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-          {activeBook && activeChapter
-            ? `${activeBook.title} — Capítulo ${activeChapter.sequence}: ${activeChapter.title}`
-            : "Selecciona un capítulo en la biblioteca"}
-        </p>
-      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "16px",
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: "1.2rem", fontWeight: "700" }}>AI Workspace (ChatGPT Manual)</h2>
+          <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
+            {activeBook && activeChapter
+              ? `${activeBook.title} — Cap ${activeChapter.sequence}: ${activeChapter.title}`
+              : "Selecciona un capítulo en la biblioteca"}
+          </p>
+        </div>
 
-      <div className="card">
+        {/* Tab switcher */}
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "8px",
+            gap: "6px",
+            background: "#0f172a",
+            padding: "4px",
+            borderRadius: "8px",
+            border: "1px solid #334155",
           }}
         >
-          <h3 style={{ fontSize: "0.95rem" }}>1. SOURCE (Capítulo)</h3>
           <button
             type="button"
-            className="btn-primary"
+            onClick={() => setActiveTab("prompts")}
             style={{
+              padding: "6px 12px",
+              borderRadius: "6px",
+              background: activeTab === "prompts" ? "#38bdf8" : "transparent",
+              color: activeTab === "prompts" ? "#0f172a" : "#94a3b8",
+              fontWeight: "600",
+              fontSize: "0.85rem",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            Prompts & Preparación
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("evaluations")}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "6px",
+              background: activeTab === "evaluations" ? "#38bdf8" : "transparent",
+              color: activeTab === "evaluations" ? "#0f172a" : "#94a3b8",
+              fontWeight: "600",
+              fontSize: "0.85rem",
+              border: "none",
+              cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              gap: "6px",
-              padding: "6px 12px",
-              fontSize: "0.8rem",
-            }}
-            onClick={() => copyToClipboard(activeChapter?.title || "", true)}
-          >
-            {copiedSource ? <Check size={14} /> : <Copy size={14} />}
-            {copiedSource ? "Copiado" : "Copiar capítulo"}
-          </button>
-        </div>
-        <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-          {activeChapter
-            ? `${activeChapter.word_count} palabras preparadas para optimización.`
-            : "No hay capítulo activo."}
-        </p>
-      </div>
-
-      <div className="card">
-        <div style={{ marginBottom: "10px" }}>
-          <label
-            htmlFor="workspace-template-select"
-            style={{
-              fontSize: "0.95rem",
-              fontWeight: "600",
-              display: "block",
-              marginBottom: "6px",
+              gap: "4px",
             }}
           >
-            2. PLANTILLAS DE PROMPTS
-          </label>
-          <select
-            id="workspace-template-select"
-            className="input-field"
-            value={selectedTemplate}
-            onChange={(e) => setSelectedTemplate(e.target.value)}
-            style={{ marginBottom: "8px" }}
-          >
-            <option value="feynman">Explicación Feynman</option>
-            <option value="condensar">Condensar Capítulo</option>
-            <option value="conceptos">Extraer Conceptos Clave</option>
-            <option value="preguntas">Generar Preguntas de Examen</option>
-            <option value="why_chain">Cadena de Razonamiento (Why-Chain)</option>
-            <option value="cheatsheet">Mejorar Cheatsheet</option>
-            <option value="evaluar">Evaluar Respuesta de Examen</option>
-            <option value="microleccion">Crear Microlección de 3 min</option>
-          </select>
-        </div>
-
-        <p
-          style={{
-            fontSize: "0.85rem",
-            color: "#cbd5e1",
-            fontStyle: "italic",
-            marginBottom: "12px",
-          }}
-        >
-          "{currentPromptText}"
-        </p>
-
-        <button
-          type="button"
-          className="btn-primary"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "6px 12px",
-            fontSize: "0.8rem",
-          }}
-          onClick={() => copyToClipboard(currentPromptText, false)}
-        >
-          {copiedPrompt ? <Check size={14} /> : <Copy size={14} />}
-          {copiedPrompt ? "Prompt Copiado" : "Copiar Prompt para ChatGPT"}
-        </button>
-      </div>
-
-      <div className="card">
-        <h3 style={{ fontSize: "0.95rem", marginBottom: "8px" }}>3. RESULTADO DE CHATGPT</h3>
-        <textarea
-          className="textarea-field"
-          placeholder="Pega aquí la respuesta generada por ChatGPT..."
-          value={chatGptResult}
-          onChange={(e) => setChatGptResult(e.target.value)}
-        />
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleSaveResult}
-            disabled={!chatGptResult.trim()}
-            style={{ display: "flex", alignItems: "center", gap: "6px" }}
-          >
-            <Sparkles size={16} />{" "}
-            {savedSuccess ? "Guardado con éxito" : "Validar y Guardar como PREPARED"}
+            <HelpCircle size={14} /> Evaluar Exámenes ({pendingAnswers.length})
           </button>
         </div>
       </div>
+
+      {activeTab === "prompts" ? (
+        <>
+          <div className="card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "8px",
+              }}
+            >
+              <h3 style={{ fontSize: "0.95rem" }}>1. SOURCE (Capítulo)</h3>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "6px 12px",
+                  fontSize: "0.8rem",
+                }}
+                onClick={() =>
+                  copyToClipboard(
+                    activeChapter ? activeChapter.title : "Selecciona un capítulo",
+                    true,
+                  )
+                }
+              >
+                {copiedSource ? <Check size={14} /> : <Copy size={14} />}
+                {copiedSource ? "Copiado" : "Copiar Texto"}
+              </button>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
+              {activeChapter
+                ? `Capítulo ${activeChapter.sequence}: ${activeChapter.title} (~${activeChapter.word_count} palabras)`
+                : "No hay capítulo activo seleccionado."}
+            </p>
+          </div>
+
+          <div className="card">
+            <div style={{ marginBottom: "10px" }}>
+              <label
+                htmlFor="workspace-template-select"
+                style={{
+                  fontSize: "0.95rem",
+                  fontWeight: "600",
+                  display: "block",
+                  marginBottom: "6px",
+                }}
+              >
+                2. PLANTILLAS DE PROMPTS
+              </label>
+              <select
+                id="workspace-template-select"
+                className="input-field"
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+                style={{ marginBottom: "8px" }}
+              >
+                <option value="feynman">Explicación Feynman</option>
+                <option value="condensar">Condensar Capítulo</option>
+                <option value="conceptos">Extraer Conceptos Clave</option>
+                <option value="preguntas">Generar Preguntas de Examen</option>
+                <option value="why_chain">Cadena de Razonamiento (Why-Chain)</option>
+                <option value="cheatsheet">Mejorar Cheatsheet</option>
+                <option value="evaluar">Evaluar Respuesta de Examen</option>
+                <option value="microleccion">Crear Microlección de 3 min</option>
+              </select>
+            </div>
+
+            <p
+              style={{
+                fontSize: "0.85rem",
+                color: "#cbd5e1",
+                fontStyle: "italic",
+                marginBottom: "12px",
+              }}
+            >
+              "{currentPromptText}"
+            </p>
+
+            <button
+              type="button"
+              className="btn-primary"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 12px",
+                fontSize: "0.8rem",
+              }}
+              onClick={() => copyToClipboard(currentPromptText, false)}
+            >
+              {copiedPrompt ? <Check size={14} /> : <Copy size={14} />}
+              {copiedPrompt ? "Prompt Copiado" : "Copiar Prompt para ChatGPT"}
+            </button>
+          </div>
+
+          <div className="card">
+            <h3 style={{ fontSize: "0.95rem", marginBottom: "8px" }}>3. RESULTADO DE CHATGPT</h3>
+            <textarea
+              className="textarea-field"
+              placeholder="Pega aquí la respuesta generada por ChatGPT..."
+              value={chatGptResult}
+              onChange={(e) => setChatGptResult(e.target.value)}
+            />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleSaveResult}
+                disabled={!chatGptResult.trim()}
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <Sparkles size={16} />{" "}
+                {savedSuccess ? "Guardado con éxito" : "Validar y Guardar como PREPARED"}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div>
+          {pendingAnswers.length === 0 ? (
+            <div
+              className="card"
+              style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}
+            >
+              <CheckCircle size={32} color="#22c55e" style={{ margin: "0 auto 12px" }} />
+              <p>¡Excelente! No hay respuestas pendientes de revisión en este momento.</p>
+            </div>
+          ) : (
+            pendingAnswers.map((ans) => (
+              <div key={ans.id} className="card" style={{ marginBottom: "16px" }}>
+                <h4 style={{ fontSize: "0.95rem", color: "#38bdf8", marginBottom: "6px" }}>
+                  Respuesta de Examen ({ans.created_at.slice(0, 10)})
+                </h4>
+                <p
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#f8fafc",
+                    marginBottom: "12px",
+                    background: "#0f172a",
+                    padding: "10px",
+                    borderRadius: "6px",
+                  }}
+                >
+                  "{ans.user_response}"
+                </p>
+
+                <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => handleCopyEvalPrompt(ans.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "0.8rem",
+                    }}
+                  >
+                    {copiedEvalMap[ans.id] ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedEvalMap[ans.id]
+                      ? "Prompt de Evaluación Copiado"
+                      : "1. Copiar Prompt para ChatGPT"}
+                  </button>
+                </div>
+
+                <div style={{ marginTop: "10px" }}>
+                  <label
+                    htmlFor={`eval-json-input-${ans.id}`}
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "#94a3b8",
+                      display: "block",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    2. Pegar JSON de Evaluación devuelto por ChatGPT:
+                  </label>
+                  <textarea
+                    id={`eval-json-input-${ans.id}`}
+                    rows={4}
+                    value={evalJsonMap[ans.id] || ""}
+                    onChange={(e) => setEvalJsonMap({ ...evalJsonMap, [ans.id]: e.target.value })}
+                    placeholder='{"score": 8.5, "feedback": "...", "suggested_fsrs_rating": 3}'
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      borderRadius: "6px",
+                      background: "#0f172a",
+                      color: "#f8fafc",
+                      border: "1px solid #334155",
+                      fontFamily: "monospace",
+                      fontSize: "0.85rem",
+                      marginBottom: "8px",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={!evalJsonMap[ans.id]?.trim()}
+                    onClick={() => handleProcessEvaluation(ans.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <CheckCircle size={14} />{" "}
+                    {evalSuccessMap[ans.id]
+                      ? "Evaluación Guardada!"
+                      : "3. Procesar y Guardar Evaluación FSRS"}
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

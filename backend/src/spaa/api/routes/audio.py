@@ -41,11 +41,7 @@ def stream_chapter_audio(chapter_id: str, db: Session = Depends(get_db)):
 
 @router.get("/offline-manifest")
 def get_offline_manifest(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    stmt = (
-        select(ChapterModel)
-        .where(ChapterModel.is_ready)
-        .order_by(ChapterModel.sequence.asc())
-    )
+    stmt = select(ChapterModel).where(ChapterModel.is_ready).order_by(ChapterModel.sequence.asc())
     ready_chapters = list(db.scalars(stmt).all())
 
     manifest_items: List[Dict[str, Any]] = []

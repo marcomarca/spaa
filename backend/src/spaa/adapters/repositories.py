@@ -5,9 +5,11 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from spaa.adapters.db_models import (
+    AnswerModel,
     BookModel,
     ChapterModel,
     PlaybackStateModel,
+    QuestionModel,
     SyncEventModel,
     TtsChunkModel,
     TtsJobModel,
@@ -52,11 +54,7 @@ class ChapterRepository:
         return self.db.get(ChapterModel, chapter_id)
 
     def list_by_variant(self, variant_id: str) -> List[ChapterModel]:
-        stmt = (
-            select(ChapterModel)
-            .where(ChapterModel.variant_id == variant_id)
-            .order_by(ChapterModel.sequence.asc())
-        )
+        stmt = select(ChapterModel).where(ChapterModel.variant_id == variant_id).order_by(ChapterModel.sequence.asc())
         return list(self.db.scalars(stmt).all())
 
     def create(self, chapter: ChapterModel) -> ChapterModel:
@@ -89,15 +87,11 @@ class TtsChunkRepository:
 
     def list_by_chapter(self, chapter_id: str) -> List[TtsChunkModel]:
         stmt = (
-            select(TtsChunkModel)
-            .where(TtsChunkModel.chapter_id == chapter_id)
-            .order_by(TtsChunkModel.sequence.asc())
+            select(TtsChunkModel).where(TtsChunkModel.chapter_id == chapter_id).order_by(TtsChunkModel.sequence.asc())
         )
         return list(self.db.scalars(stmt).all())
 
-    def update_status(
-        self, chunk_id: str, status: str, qa_status: str | None = None
-    ) -> Optional[TtsChunkModel]:
+    def update_status(self, chunk_id: str, status: str, qa_status: str | None = None) -> Optional[TtsChunkModel]:
         chunk = self.get(chunk_id)
         if chunk:
             chunk.status = status
@@ -259,3 +253,76 @@ class SyncEventRepository:
         self.db.commit()
         self.db.refresh(event)
         return event
+
+
+class QuestionRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get(self, question_id: str) -> Optional[QuestionModel]:
+        return self.db.get(QuestionModel, question_id)
+
+    def list_by_chapter(self, chapter_id: str) -> List[QuestionModel]:
+        stmt = (
+            select(QuestionModel).where(QuestionModel.chapter_id == chapter_id).order_by(QuestionModel.created_at.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def create(self, question: QuestionModel) -> QuestionModel:
+        self.db.add(question)
+        self.db.commit()
+        self.db.refresh(question)
+        return question
+
+    def delete(self, question_id: str) -> bool:
+        q = self.get(question_id)
+        if q:
+            self.db.delete(q)
+            self.db.commit()
+            return True
+        return False
+
+
+class AnswerRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get(self, answer_id: str) -> Optional[AnswerModel]:
+        return self.db.get(AnswerModel, answer_id)
+
+    def list_by_question(self, question_id: str) -> List[AnswerModel]:
+        stmt = select(AnswerModel).where(AnswerModel.question_id == question_id).order_by(AnswerModel.created_at.desc())
+        return list(self.db.scalars(stmt).all())
+
+    def list_pending_reviews(self) -> List[AnswerModel]:
+        stmt = select(AnswerModel).where(AnswerModel.status == "PENDING_REVIEW").order_by(AnswerModel.created_at.asc())
+        return list(self.db.scalars(stmt).all())
+
+    def create(self, answer: AnswerModel) -> AnswerModel:
+        self.db.add(answer)
+        self.db.commit()
+        self.db.refresh(answer)
+        return answer
+
+    def update_evaluation(
+        self,
+        answer_id: str,
+        score: float,
+        correct_points: str,
+        missing_points: str,
+        misconceptions: str,
+        feedback: str,
+    ) -> Optional[AnswerModel]:
+        ans = self.get(answer_id)
+        if not ans:
+            return None
+        ans.score = score
+        ans.correct_points = correct_points
+        ans.missing_points = missing_points
+        ans.misconceptions = misconceptions
+        ans.evaluator_feedback = feedback
+        ans.status = "REVIEWED"
+        ans.evaluated_at = utc_now()
+        self.db.commit()
+        self.db.refresh(ans)
+        return ans
