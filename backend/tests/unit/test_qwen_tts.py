@@ -8,10 +8,10 @@ from spaa.domain.models import DEFAULT_QWEN_INSTRUCT
 def test_qwen_tts_engine_initialization(tmp_path: Path):
     engine = QwenTTSEngine(base_dir=tmp_path)
     assert engine.default_speaker == "Ryan"
-    assert engine.chunk_words == 90
+    assert engine.chunk_words == 45
     assert engine.gap_seconds == 0.20
     assert engine.default_instruct == DEFAULT_QWEN_INSTRUCT
-    assert "energética" in engine.default_instruct
+    assert "pausada" in engine.default_instruct
 
 
 def test_qwen_tts_speaker_validation(tmp_path: Path):

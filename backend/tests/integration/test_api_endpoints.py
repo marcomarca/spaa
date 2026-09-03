@@ -83,7 +83,7 @@ Calcula los ángulos articulares requeridos para alcanzar una pose deseada en el
     assert claim_data["job"] is not None
     assert claim_data["job"]["provider"] == "qwen"
     assert claim_data["job"]["voice"] == "Ryan"
-    assert "energética" in claim_data["job"]["instruct"]
+    assert "pausada" in claim_data["job"]["instruct"]
     assert "Cinemática Directa" in claim_data["job"]["spoken_text"]
 
 

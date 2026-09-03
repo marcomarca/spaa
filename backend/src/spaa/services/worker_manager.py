@@ -48,6 +48,7 @@ class WorkerManager:
         speaker: str = "Ryan",
         instruct: str | None = None,
         poll_interval: float = 2.0,
+        chunk_words: int = 45,
     ) -> dict[str, Any]:
         """Arranca el subproceso del worker local si no está ya activo."""
         if self.is_running:
@@ -73,6 +74,8 @@ class WorkerManager:
             speaker,
             "--interval",
             str(poll_interval),
+            "--chunk-words",
+            str(chunk_words),
         ]
         if instruct:
             cmd.extend(["--instruct", instruct])

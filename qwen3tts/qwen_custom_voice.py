@@ -77,26 +77,7 @@ DEFAULT_ENERGY_INSTRUCT = (
 )
 
 
-def sanitize_tts_text(text: str) -> str:
-    """
-    Sanitizes text for robust neural TTS tokenization:
-    - Replaces typographical quotes, guillemets, and dashes with standard punctuation.
-    - Normalizes isolated uppercase acronyms to natural Titlecase (e.g., INJOY -> Injoy).
-    - Cleans excessive whitespace.
-    """
-    if not text:
-        return ""
-    t = text.replace("«", '"').replace("»", '"')
-    t = t.replace("“", '"').replace("”", '"')
-    t = t.replace("‘", "'").replace("’", "'")
-    t = t.replace("—", " — ").replace("–", " — ")
-
-    # Capitalize acronyms of 3+ letters that are all-caps to prevent spelling/pronunciation hallucination
-    t = re.sub(r"\b[A-Z]{3,}\b", lambda m: m.group(0).capitalize(), t)
-
-    # Normalize whitespace
-    t = re.sub(r"\s+", " ", t).strip()
-    return t
+from text_processor import sanitize_tts_text, split_text_by_words
 
 
 def set_seed(seed: int) -> int:
@@ -113,67 +94,6 @@ def set_seed(seed: int) -> int:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     return seed
-
-
-def split_text_by_words(text: str, max_words: int = 45) -> list[str]:
-    """
-    Deterministic text splitter for CustomVoice synthesis:
-    1. Sanitizes text (quotes, acronyms, spacing).
-    2. Splits on sentence terminators (. ! ? …).
-    3. If a sentence exceeds max_words (45), splits on secondary punctuation (: ; , —).
-    4. Ensures no chunk exceeds max_words to prevent autoregressive attention collapse.
-    """
-    cleaned = sanitize_tts_text(text)
-    if not cleaned:
-        return []
-
-    major_sentences = re.split(r"(?<=[.!?…])\s+", cleaned)
-    chunks: list[str] = []
-
-    for sentence in major_sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-
-        words = sentence.split()
-        if len(words) <= max_words:
-            chunks.append(sentence)
-            continue
-
-        # Subdivide on secondary punctuation (: ; , —)
-        sub_clauses = re.split(r"(?<=[;:—,])\s+", sentence)
-        current: list[str] = []
-        current_count = 0
-
-        for clause in sub_clauses:
-            clause = clause.strip()
-            if not clause:
-                continue
-            c_words = clause.split()
-
-            if len(c_words) > max_words:
-                # If a single clause is still too long, split on words directly
-                if current:
-                    chunks.append(" ".join(current).strip())
-                    current = []
-                    current_count = 0
-                for i in range(0, len(c_words), max_words):
-                    chunks.append(" ".join(c_words[i:i + max_words]))
-                continue
-
-            if current_count + len(c_words) <= max_words:
-                current.append(clause)
-                current_count += len(c_words)
-            else:
-                if current:
-                    chunks.append(" ".join(current).strip())
-                current = [clause]
-                current_count = len(c_words)
-
-        if current:
-            chunks.append(" ".join(current).strip())
-
-    return chunks
 
 
 

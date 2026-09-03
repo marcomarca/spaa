@@ -41,6 +41,7 @@ class LocalQwenWorker:
         poll_interval_seconds: float = 2.0,
         speaker: str = "Ryan",
         instruct: str | None = None,
+        chunk_words: int = 45,
         max_temp_celsius: int = 70,
         cooldown_temp_celsius: int = 58,
         check_thermal: bool = True,
@@ -54,6 +55,7 @@ class LocalQwenWorker:
         self.engine = QwenTTSEngine(
             default_speaker=speaker,
             default_instruct=instruct,
+            chunk_words=chunk_words,
         )
         self.is_running = False
 

@@ -33,7 +33,7 @@ class QwenTTSEngine:
         base_dir: Path | None = None,
         default_speaker: str = "Ryan",
         default_instruct: str | None = None,
-        chunk_words: int = 90,
+        chunk_words: int = 45,
         gap_seconds: float = 0.20,
     ) -> None:
         self.base_dir = (base_dir or Path(__file__).resolve().parents[4]).resolve()

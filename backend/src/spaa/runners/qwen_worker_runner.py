@@ -38,6 +38,7 @@ def main() -> None:
     parser.add_argument("--no-thermal", action="store_true", help="Desactivar protector térmico")
     parser.add_argument("--once", action="store_true", help="Procesar solo un trabajo y salir")
     parser.add_argument("--interval", type=float, default=2.0, help="Intervalo de polling en segundos")
+    parser.add_argument("--chunk-words", type=int, default=45, help="Palabras máximas por micro-pasada (45)")
 
     args = parser.parse_args()
 
@@ -47,6 +48,7 @@ def main() -> None:
         poll_interval_seconds=args.interval,
         speaker=args.speaker,
         instruct=args.instruct,
+        chunk_words=args.chunk_words,
         max_temp_celsius=args.max_temp,
         cooldown_temp_celsius=args.cooldown_temp,
         check_thermal=not args.no_thermal,

@@ -22,7 +22,6 @@ DEFAULT_QWEN_INSTRUCT = (
 )
 
 
-
 class BookMode(str, Enum):
     QUALITY = "quality"  # Gemini only
     AUTO = "auto"  # Qwen -> Gemini -> Edge based on urgency/buffer
