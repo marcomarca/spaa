@@ -17,10 +17,10 @@ class TTSProvider(str, Enum):
 
 
 DEFAULT_QWEN_INSTRUCT = (
-    "Voz extremadamente energética, entusiasta y dinámica. Ritmo rápido pero claro, con mucha intención "
-    "y actitud. Enfatiza las palabras clave, usa cambios naturales de entonación y evita sonar monótono. "
-    "Debe sentirse como un anuncio emocionante: potente, expresivo, contagioso y con energía alta de principio a fin."
+    "Voz clara, pausada y profesional con dicción nítida en español. Ritmo natural, "
+    "entonación atractiva y comprensible, pronunciando cada palabra con precisión sin acelerar."
 )
+
 
 
 class BookMode(str, Enum):

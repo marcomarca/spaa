@@ -46,9 +46,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--chunk_words",
         type=int,
-        default=90,
-        help="Palabras máximas por bloque secuencial (recomendado: 90 para evitar saturación)",
+        default=45,
+        help="Palabras máximas por bloque secuencial (recomendado: 45 para evitar saturación y colapso)",
     )
+
     parser.add_argument(
         "--gap",
         type=float,

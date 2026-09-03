@@ -72,10 +72,31 @@ SPEAKERS = {
 }
 
 DEFAULT_ENERGY_INSTRUCT = (
-    "Extremely energetic, enthusiastic and dynamic delivery. Fast but clear pace, "
-    "strong emphasis on key words, lively natural intonation, expressive and powerful "
-    "from beginning to end."
+    "Voz clara, pausada y profesional con dicción nítida en español. Ritmo natural, "
+    "entonación atractiva y comprensible, pronunciando cada palabra con precisión sin acelerar."
 )
+
+
+def sanitize_tts_text(text: str) -> str:
+    """
+    Sanitizes text for robust neural TTS tokenization:
+    - Replaces typographical quotes, guillemets, and dashes with standard punctuation.
+    - Normalizes isolated uppercase acronyms to natural Titlecase (e.g., INJOY -> Injoy).
+    - Cleans excessive whitespace.
+    """
+    if not text:
+        return ""
+    t = text.replace("«", '"').replace("»", '"')
+    t = t.replace("“", '"').replace("”", '"')
+    t = t.replace("‘", "'").replace("’", "'")
+    t = t.replace("—", " — ").replace("–", " — ")
+
+    # Capitalize acronyms of 3+ letters that are all-caps to prevent spelling/pronunciation hallucination
+    t = re.sub(r"\b[A-Z]{3,}\b", lambda m: m.group(0).capitalize(), t)
+
+    # Normalize whitespace
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
 
 def set_seed(seed: int) -> int:
@@ -94,49 +115,66 @@ def set_seed(seed: int) -> int:
     return seed
 
 
-def split_text_by_words(text: str, max_words: int = 90) -> list[str]:
+def split_text_by_words(text: str, max_words: int = 45) -> list[str]:
     """
-    External wrapper for long text. The CustomVoice model itself receives one chunk at a time.
-    Splits on sentence boundaries first, then words if a sentence is too long.
+    Deterministic text splitter for CustomVoice synthesis:
+    1. Sanitizes text (quotes, acronyms, spacing).
+    2. Splits on sentence terminators (. ! ? …).
+    3. If a sentence exceeds max_words (45), splits on secondary punctuation (: ; , —).
+    4. Ensures no chunk exceeds max_words to prevent autoregressive attention collapse.
     """
-    text = re.sub(r"\s+", " ", text.strip())
-    if not text:
+    cleaned = sanitize_tts_text(text)
+    if not cleaned:
         return []
 
-    sentences = re.split(r"(?<=[.!?…])\s+", text)
+    major_sentences = re.split(r"(?<=[.!?…])\s+", cleaned)
     chunks: list[str] = []
-    current: list[str] = []
-    current_count = 0
 
-    def flush() -> None:
-        nonlocal current, current_count
-        if current:
-            chunks.append(" ".join(current).strip())
-            current = []
-            current_count = 0
-
-    for sentence in sentences:
+    for sentence in major_sentences:
         sentence = sentence.strip()
         if not sentence:
             continue
-        words = sentence.split()
 
-        if len(words) > max_words:
-            flush()
-            for i in range(0, len(words), max_words):
-                chunks.append(" ".join(words[i:i + max_words]))
+        words = sentence.split()
+        if len(words) <= max_words:
+            chunks.append(sentence)
             continue
 
-        if current_count + len(words) <= max_words:
-            current.append(sentence)
-            current_count += len(words)
-        else:
-            flush()
-            current.append(sentence)
-            current_count = len(words)
+        # Subdivide on secondary punctuation (: ; , —)
+        sub_clauses = re.split(r"(?<=[;:—,])\s+", sentence)
+        current: list[str] = []
+        current_count = 0
 
-    flush()
+        for clause in sub_clauses:
+            clause = clause.strip()
+            if not clause:
+                continue
+            c_words = clause.split()
+
+            if len(c_words) > max_words:
+                # If a single clause is still too long, split on words directly
+                if current:
+                    chunks.append(" ".join(current).strip())
+                    current = []
+                    current_count = 0
+                for i in range(0, len(c_words), max_words):
+                    chunks.append(" ".join(c_words[i:i + max_words]))
+                continue
+
+            if current_count + len(c_words) <= max_words:
+                current.append(clause)
+                current_count += len(c_words)
+            else:
+                if current:
+                    chunks.append(" ".join(current).strip())
+                current = [clause]
+                current_count = len(c_words)
+
+        if current:
+            chunks.append(" ".join(current).strip())
+
     return chunks
+
 
 
 @dataclass
@@ -243,10 +281,11 @@ class QwenCustomVoiceEngine:
         instruct: str = "",
         seed: int = -1,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
-        chunk_words: int = 90,
+        chunk_words: int = 45,
         gap_seconds: float = 0.20,
         progress_callback=None,
     ) -> GenerationStats:
+
         if self.tts is None:
             self.load()
 
