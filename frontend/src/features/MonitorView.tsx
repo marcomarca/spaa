@@ -707,19 +707,25 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
             </div>
 
             <div className="chunk-modal-footer">
-              {["RETRY_WAIT", "WAITING_PROVIDER", "FAILED"].includes(selectedChunk.status) &&
-                selectedChunk.job_id && (
-                  <button
-                    type="button"
-                    className="modal-retry-action-btn"
-                    onClick={() => {
-                      if (selectedChunk.job_id) handleRetryJob(selectedChunk.job_id);
-                    }}
-                  >
-                    <RotateCcw size={14} />
-                    <span>Reintentar este bloque ahora</span>
-                  </button>
-                )}
+              {selectedChunk.job_id && (
+                <button
+                  type="button"
+                  className="modal-retry-action-btn"
+                  onClick={() => {
+                    if (selectedChunk.job_id) {
+                      handleRetryJob(selectedChunk.job_id);
+                      setSelectedChunk(null);
+                    }
+                  }}
+                >
+                  <RotateCcw size={14} />
+                  <span>
+                    {selectedChunk.status === "READY"
+                      ? "Re-encolar para re-generar bloque"
+                      : "Reintentar este bloque ahora"}
+                  </span>
+                </button>
+              )}
               <button
                 type="button"
                 className="modal-secondary-btn"

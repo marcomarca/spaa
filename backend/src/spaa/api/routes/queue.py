@@ -10,6 +10,7 @@ from spaa.adapters.database import get_db
 from spaa.adapters.db_models import BookModel, ChapterModel, TtsChunkModel, TtsJobModel
 from spaa.adapters.repositories import TtsJobRepository, TtsWorkerRepository
 from spaa.config import settings
+from spaa.domain.models import DEFAULT_QWEN_INSTRUCT
 from spaa.services.audio_pipeline_service import AudioPipelineService
 from spaa.services.tts_queue_service import TtsQueueService
 from spaa.services.worker_manager import worker_manager
@@ -302,6 +303,7 @@ def retry_job(job_id: str, db: Session = Depends(get_db)):
     if chunk:
         chunk.status = "QUEUED"
         chunk.qa_status = "PENDING"
+        chunk.instruct = DEFAULT_QWEN_INSTRUCT
         chunk.updated_at = now
 
     db.commit()
