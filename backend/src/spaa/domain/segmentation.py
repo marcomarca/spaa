@@ -34,13 +34,13 @@ class SegmentedChunk:
 class MarkdownSegmenter:
     """Deterministic segmenter for Markdown according to SPAA specification.
 
-    Target: 800-900 words.
-    Soft max: 900 words.
-    Hard max: 950 words.
-    Semantic cut hierarchy: Section -> Paragraph -> List -> Sentence.
+    Target: 90-100 words.
+    Hard max: 110 words.
+    Semantic cut hierarchy: Section -> Paragraph -> Sentence -> Clause.
+    Optimized for neural TTS stability, fast visual feedback, and robust crash recovery.
     """
 
-    def __init__(self, target_words: int = 850, hard_max_words: int = 950):
+    def __init__(self, target_words: int = 100, hard_max_words: int = 110):
         self.target_words = target_words
         self.hard_max_words = hard_max_words
 
@@ -160,7 +160,7 @@ class MarkdownSegmenter:
         return sections
 
     def segment_chapter(self, chapter: ParsedChapter) -> List[SegmentedChunk]:
-        """Segments a chapter into spoken chunks <= hard_max_words (default 950)."""
+        """Segments a chapter into spoken micro-chunks <= hard_max_words (default 110)."""
         chunks: List[SegmentedChunk] = []
 
         # Collect atomic units (paragraphs, headers with following paragraphs, or sentences)
@@ -172,12 +172,12 @@ class MarkdownSegmenter:
         for unit in units:
             unit_words = MarkdownCleaner.count_words(unit)
 
-            # If single unit exceeds hard_max, split by sentences
+            # If single unit exceeds hard_max, split by sentences and clauses
             if unit_words > self.hard_max_words:
-                sub_sentences = self._split_into_sentences(unit)
-                for sentence in sub_sentences:
-                    sentence_words = MarkdownCleaner.count_words(sentence)
-                    if current_words + sentence_words > self.hard_max_words and current_unit_group:
+                sub_units = self._split_into_sentences(unit)
+                for sub_u in sub_units:
+                    sub_words = MarkdownCleaner.count_words(sub_u)
+                    if current_words + sub_words > self.hard_max_words and current_unit_group:
                         raw_chunk = "\n\n".join(current_unit_group).strip()
                         spoken = MarkdownCleaner.clean_for_tts(raw_chunk)
                         chunks.append(
@@ -193,8 +193,8 @@ class MarkdownSegmenter:
                         current_unit_group = []
                         current_words = 0
 
-                    current_unit_group.append(sentence)
-                    current_words += sentence_words
+                    current_unit_group.append(sub_u)
+                    current_words += sub_words
                 continue
 
             if current_words + unit_words > self.hard_max_words and current_unit_group:
@@ -262,6 +262,36 @@ class MarkdownSegmenter:
         return units
 
     def _split_into_sentences(self, text: str) -> List[str]:
-        # Split on punctuation (. ? !) followed by whitespace, keeping abbreviations safe
-        sentences = re.split(r"(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ0-9])", text)
-        return [s.strip() for s in sentences if s.strip()]
+        """Splits text into sentences, and sub-splits any sentence that exceeds hard_max_words."""
+        # Split on sentence punctuation (. ? ! ...) followed by whitespace
+        raw_sentences = re.split(r"(?<=[.?!…])\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ0-9¿¡])", text)
+        result: List[str] = []
+
+        for sent in raw_sentences:
+            sent = sent.strip()
+            if not sent:
+                continue
+            words = sent.split()
+            if len(words) <= self.hard_max_words:
+                result.append(sent)
+            else:
+                # Split clauses by punctuation (, ; : —)
+                clauses = re.split(r"(?<=[,;:—])\s+", sent)
+                curr_clause: List[str] = []
+                for cl in clauses:
+                    cl_words = cl.split()
+                    if len(curr_clause) + len(cl_words) <= self.hard_max_words:
+                        curr_clause.extend(cl_words)
+                    else:
+                        if curr_clause:
+                            result.append(" ".join(curr_clause))
+                            curr_clause = []
+                        if len(cl_words) <= self.hard_max_words:
+                            curr_clause.extend(cl_words)
+                        else:
+                            for i in range(0, len(cl_words), self.target_words):
+                                result.append(" ".join(cl_words[i : i + self.target_words]))
+                if curr_clause:
+                    result.append(" ".join(curr_clause))
+
+        return [s.strip() for s in result if s.strip()]

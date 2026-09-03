@@ -38,3 +38,9 @@ Thumbs.db
 
 # Large HTML snapshots
 *.example*.html
+
+# Qwen3-TTS local runtime & weights
+qwen3tts/.venv/
+qwen3tts/cache/
+qwen3tts/models/
+qwen3tts/outputs/

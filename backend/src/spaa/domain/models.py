@@ -10,15 +10,23 @@ class Language(str, Enum):
 
 
 class TTSProvider(str, Enum):
+    QWEN = "qwen"
     GEMINI = "gemini"
     F5 = "f5"
     EDGE = "edge"
 
 
+DEFAULT_QWEN_INSTRUCT = (
+    "Voz extremadamente energética, entusiasta y dinámica. Ritmo rápido pero claro, con mucha intención "
+    "y actitud. Enfatiza las palabras clave, usa cambios naturales de entonación y evita sonar monótono. "
+    "Debe sentirse como un anuncio emocionante: potente, expresivo, contagioso y con energía alta de principio a fin."
+)
+
+
 class BookMode(str, Enum):
     QUALITY = "quality"  # Gemini only
-    AUTO = "auto"  # Gemini -> F5 -> Edge based on urgency/buffer
-    LOCAL = "local"  # F5
+    AUTO = "auto"  # Qwen -> Gemini -> Edge based on urgency/buffer
+    LOCAL = "local"  # Qwen
 
 
 class JobStatus(str, Enum):
@@ -135,9 +143,10 @@ class TtsChunk:
     spoken_text: str = ""
     word_count: int = 0
     language: Language = Language.ES
-    provider: TTSProvider = TTSProvider.F5
-    model: str = "f5_spanish"
-    voice: str = "marco"
+    provider: TTSProvider = TTSProvider.QWEN
+    model: str = "qwen3-tts-1.7b"
+    voice: str = "Ryan"
+    instruct: str = DEFAULT_QWEN_INSTRUCT
     status: JobStatus = JobStatus.NEW
     wav_path: str | None = None
     wav_sha256: str | None = None
@@ -152,7 +161,7 @@ class TtsJob:
     id: str = field(default_factory=lambda: str(uuid4()))
     chunk_id: str = ""
     status: JobStatus = JobStatus.QUEUED
-    provider: TTSProvider = TTSProvider.F5
+    provider: TTSProvider = TTSProvider.QWEN
     worker_id: str | None = None
     claimed_at: datetime | None = None
     lease_until: datetime | None = None

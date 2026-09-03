@@ -1,0 +1,5 @@
+qwen-tts
+gradio
+huggingface_hub
+numpy
+soundfile

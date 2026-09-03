@@ -103,3 +103,80 @@ export interface NetworkSyncState {
   offlineBufferedHours: number;
   storageUsedBytes: number;
 }
+
+export type ChunkStatus =
+  | "NEW"
+  | "PREPARED"
+  | "QUEUED"
+  | "CLAIMED"
+  | "PREPARING"
+  | "GENERATING"
+  | "DOWNLOADING"
+  | "READY"
+  | "RETRY_WAIT"
+  | "WAITING_PROVIDER"
+  | "FAILED"
+  | "CANCELLED";
+
+export interface QueueChunkItem {
+  id: string;
+  job_id: string | null;
+  book_id: string;
+  book_title: string;
+  chapter_id: string;
+  chapter_title: string;
+  chapter_sequence: number;
+  sequence: number;
+  status: ChunkStatus;
+  word_count: number;
+  duration_seconds: number;
+  voice: string;
+  provider: string;
+  attempts: number;
+  last_error: string | null;
+  worker_id: string | null;
+  spoken_preview: string;
+  spoken_text: string;
+  updated_at: string | null;
+}
+
+export interface QueueSummary {
+  total_chunks: number;
+  ready_count: number;
+  generating_count: number;
+  queued_count: number;
+  error_count: number;
+  total_audio_seconds: number;
+  total_audio_minutes: number;
+  progress_percentage: number;
+}
+
+export interface WorkerInfo {
+  worker_id: string;
+  profile_alias: string;
+  status: string;
+  current_job_id: string | null;
+  last_heartbeat: string;
+}
+
+export interface QueueMonitorData {
+  summary: QueueSummary;
+  workers: WorkerInfo[];
+  chunks: QueueChunkItem[];
+}
+
+export interface WorkerLogsResponse {
+  file_exists: boolean;
+  file_path: string;
+  total_lines: number;
+  file_size_bytes: number;
+  lines: string[];
+}
+
+export interface WorkerProcessStatus {
+  is_running: boolean;
+  pid: number | null;
+  started_at: string | null;
+  speaker: string;
+  exit_code: number | null;
+}

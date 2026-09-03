@@ -10,6 +10,7 @@ from spaa.adapters.repositories import (
     TtsWorkerRepository,
 )
 from spaa.config import settings
+from spaa.domain.models import DEFAULT_QWEN_INSTRUCT
 
 
 def utc_now() -> datetime:
@@ -80,8 +81,9 @@ class TtsQueueService:
             "word_count": chunk.word_count if chunk else 0,
             "language": chunk.language if chunk else "es",
             "provider": job.provider,
-            "model": chunk.model if chunk else "gemini-2.5-pro-preview-tts",
-            "voice": chunk.voice if chunk else "Puck",
+            "model": chunk.model if chunk else "qwen3-tts-1.7b",
+            "voice": chunk.voice if chunk else "Ryan",
+            "instruct": getattr(chunk, "instruct", None) or DEFAULT_QWEN_INSTRUCT,
             "lease_until": lease_until.isoformat(),
         }
 

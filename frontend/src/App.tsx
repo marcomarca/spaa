@@ -1,8 +1,18 @@
-import { BookOpen, Brain, Headphones, HelpCircle, Sparkles, Wifi, WifiOff } from "lucide-react";
+import {
+  Activity,
+  BookOpen,
+  Brain,
+  Headphones,
+  HelpCircle,
+  Sparkles,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { TransportPlayer } from "./components/TransportPlayer";
 import type { Book, Chapter, NetworkSyncState, OfflineManifest } from "./domain/types";
 import { LibraryView } from "./features/LibraryView";
+import { MonitorView } from "./features/MonitorView";
 import { StudyQuestionsView } from "./features/StudyQuestionsView";
 import { StudyView } from "./features/StudyView";
 import { WorkspaceView } from "./features/WorkspaceView";
@@ -10,7 +20,7 @@ import { syncManager } from "./services/SyncManager";
 import { api } from "./services/api";
 import { LocalStorageAdapter } from "./services/storage";
 
-type Tab = "player" | "library" | "workspace" | "study" | "questions";
+type Tab = "player" | "library" | "workspace" | "study" | "questions" | "monitor";
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>("player");
@@ -147,6 +157,7 @@ export function App() {
         {activeTab === "questions" && (
           <StudyQuestionsView activeBook={activeBook} activeChapter={activeChapter} />
         )}
+        {activeTab === "monitor" && <MonitorView books={books} activeBook={activeBook} />}
       </main>
 
       <nav className="nav-bar">
@@ -165,6 +176,14 @@ export function App() {
         >
           <BookOpen size={20} />
           <span>Biblioteca</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-item ${activeTab === "monitor" ? "active" : ""}`}
+          onClick={() => setActiveTab("monitor")}
+        >
+          <Activity size={20} />
+          <span>Monitor</span>
         </button>
         <button
           type="button"

@@ -9,8 +9,9 @@ class TTSGenerationRequest:
     chunk_id: str
     spoken_text: str
     language: str = "es"
-    voice: str = "Puck"
-    model: str = "gemini-2.5-pro-preview-tts"
+    voice: str = "Ryan"
+    model: str = "qwen3-tts-1.7b"
+    instruct: Optional[str] = None
 
 
 @dataclass
@@ -47,6 +48,36 @@ class GeminiStudioProvider(BaseTTSProvider):
             success=True,
             wav_path=output_wav,
             error=None,
+        )
+
+
+class QwenTTSProvider(BaseTTSProvider):
+    """Local provider using Qwen3-TTS 12Hz 1.7B CustomVoice with GPU acceleration and prompt-based style control."""
+
+    def __init__(self) -> None:
+        from spaa.adapters.qwen_tts_engine import QwenTTSEngine
+
+        self.engine = QwenTTSEngine()
+
+    def get_provider_name(self) -> str:
+        return "qwen"
+
+    async def synthesize(self, request: TTSGenerationRequest, output_wav: Path) -> TTSGenerationResult:
+        res = self.engine.synthesize(
+            text=request.spoken_text,
+            output_wav=output_wav,
+            speaker=request.voice if request.voice and request.voice != "Puck" else "Ryan",
+            instruct=request.instruct,
+        )
+        if res.get("success"):
+            return TTSGenerationResult(
+                success=True,
+                wav_path=Path(res["wav_path"]),
+                error=None,
+            )
+        return TTSGenerationResult(
+            success=False,
+            error=res.get("error", "Error desconocido en inferencia Qwen3-TTS"),
         )
 
 

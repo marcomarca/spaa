@@ -19,8 +19,10 @@
 8. When a bug exists, reproduce it before fixing it when feasible.
 9. When a behavior is important, encode it in tests or executable checks.
 10. Leave the repo cleaner, but do not perform unrelated cleanup.
+11. Never run services on default ports (5173, 8000) without verifying availability. If occupied, dynamically reallocate to a free port (e.g. 5180+) and adjust proxy configurations to prevent port conflicts.
 
 ## Default Work Loop
+
 
 ```txt
 1. Read relevant files and inspect git status.

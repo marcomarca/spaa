@@ -4,7 +4,10 @@ import type {
   EvaluationPayload,
   OfflineManifest,
   Question,
+  QueueMonitorData,
   SyncEvent,
+  WorkerLogsResponse,
+  WorkerProcessStatus,
 } from "../domain/types";
 
 export class ApiClient {
@@ -164,6 +167,75 @@ export class ApiClient {
       body: JSON.stringify({ entity_id: entityId, rating }),
     });
     if (!res.ok) throw new Error("Error al registrar repaso FSRS");
+    return res.json();
+  }
+
+  // ==========================================
+  // TTS Queue & GPU Worker Monitor Endpoints
+  // ==========================================
+
+  async fetchQueueMonitor(bookId?: string): Promise<QueueMonitorData> {
+    const url = bookId
+      ? `${this.baseUrl}/api/queue/monitor?book_id=${encodeURIComponent(bookId)}`
+      : `${this.baseUrl}/api/queue/monitor`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Error al consultar monitor de cola TTS");
+    return res.json();
+  }
+
+  async fetchWorkerLogs(lines = 150): Promise<WorkerLogsResponse> {
+    const res = await fetch(`${this.baseUrl}/api/queue/logs?lines=${lines}`);
+    if (!res.ok) throw new Error("Error al obtener logs del worker");
+    return res.json();
+  }
+
+  async retryJob(jobId: string): Promise<{ success: boolean; job_id: string }> {
+    const res = await fetch(`${this.baseUrl}/api/queue/jobs/${jobId}/retry`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Error al reintentar bloque TTS");
+    return res.json();
+  }
+
+  async retryAllFailedJobs(): Promise<{ success: boolean; reset_count: number }> {
+    const res = await fetch(`${this.baseUrl}/api/queue/retry-failed`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Error al reintentar bloques fallidos");
+    return res.json();
+  }
+
+  // ==========================================
+  // Worker Process Lifecycle Control
+  // ==========================================
+
+  async getWorkerProcessStatus(): Promise<WorkerProcessStatus> {
+    const res = await fetch(`${this.baseUrl}/api/queue/worker/status`);
+    if (!res.ok) throw new Error("Error al consultar estado del proceso del worker");
+    return res.json();
+  }
+
+  async startWorker(
+    speaker = "Ryan",
+  ): Promise<{ success: boolean; message: string; status: WorkerProcessStatus }> {
+    const res = await fetch(`${this.baseUrl}/api/queue/worker/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker }),
+    });
+    if (!res.ok) throw new Error("Error al iniciar worker GPU");
+    return res.json();
+  }
+
+  async stopWorker(): Promise<{
+    success: boolean;
+    message: string;
+    status: WorkerProcessStatus;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/queue/worker/stop`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Error al detener worker GPU");
     return res.json();
   }
 }

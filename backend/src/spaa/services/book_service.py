@@ -12,6 +12,7 @@ from spaa.adapters.db_models import (
 )
 from spaa.adapters.storage import StorageAdapter
 from spaa.domain.markdown_cleaner import MarkdownCleaner
+from spaa.domain.models import DEFAULT_QWEN_INSTRUCT
 from spaa.domain.segmentation import MarkdownSegmenter
 
 
@@ -107,9 +108,10 @@ class BookService:
                     spoken_text=chunk.spoken_text,
                     word_count=chunk.word_count,
                     language=language,
-                    provider="f5",
-                    model="f5_spanish",
-                    voice="marco",
+                    provider="qwen",
+                    model="qwen3-tts-1.7b",
+                    voice="Ryan",
+                    instruct=DEFAULT_QWEN_INSTRUCT,
                     status="QUEUED",
                 )
                 self.db.add(tts_chunk)
@@ -119,7 +121,7 @@ class BookService:
                     id=job_id,
                     chunk_id=chunk_id,
                     status="QUEUED",
-                    provider="f5",
+                    provider="qwen",
                 )
                 self.db.add(tts_job)
 

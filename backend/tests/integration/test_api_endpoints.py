@@ -76,11 +76,14 @@ Calcula los ángulos articulares requeridos para alcanzar una pose deseada en el
     # 3. Worker claims first chunk
     claim_resp = client.post(
         "/api/queue/claim",
-        json={"worker_id": "worker-f5-1", "profile_alias": "Perfil 1", "provider": "f5"},
+        json={"worker_id": "worker-qwen-1", "profile_alias": "Perfil Qwen", "provider": "qwen"},
     )
     assert claim_resp.status_code == 200
     claim_data = claim_resp.json()
     assert claim_data["job"] is not None
+    assert claim_data["job"]["provider"] == "qwen"
+    assert claim_data["job"]["voice"] == "Ryan"
+    assert "energética" in claim_data["job"]["instruct"]
     assert "Cinemática Directa" in claim_data["job"]["spoken_text"]
 
 
@@ -114,3 +117,49 @@ def test_sync_events_idempotency(client: TestClient):
     assert r2.status_code == 200
     assert r2.json()["processed"] == 0
     assert r2.json()["skipped_duplicates"] == 1
+
+
+def test_queue_monitor_and_logs(client: TestClient):
+    # Import a sample book first to populate chunks
+    book_payload = {
+        "title": "Libro de Prueba Monitor",
+        "author": "Autor Test",
+        "language": "es",
+        "mode": "auto",
+        "markdown_text": "# Cap 1\n\nTexto de prueba para el monitor.\n",
+    }
+    client.post("/api/books/import", json=book_payload)
+
+    # 1. Test /api/queue/monitor
+    res_monitor = client.get("/api/queue/monitor")
+    assert res_monitor.status_code == 200
+    data = res_monitor.json()
+    assert "summary" in data
+    assert data["summary"]["total_chunks"] >= 1
+    assert "chunks" in data
+    assert len(data["chunks"]) >= 1
+    first_chunk = data["chunks"][0]
+    assert "status" in first_chunk
+    assert "chapter_title" in first_chunk
+
+    # 2. Test /api/queue/logs
+    res_logs = client.get("/api/queue/logs?lines=50")
+    assert res_logs.status_code == 200
+    logs_data = res_logs.json()
+    assert "lines" in logs_data
+
+    # 3. Test /api/queue/retry-failed
+    res_retry = client.post("/api/queue/retry-failed")
+    assert res_retry.status_code == 200
+    assert "reset_count" in res_retry.json()
+
+    # 4. Test /api/queue/worker/status
+    res_worker_status = client.get("/api/queue/worker/status")
+    assert res_worker_status.status_code == 200
+    worker_data = res_worker_status.json()
+    assert "is_running" in worker_data
+
+    # 5. Test /api/queue/worker/stop
+    res_worker_stop = client.post("/api/queue/worker/stop")
+    assert res_worker_stop.status_code == 200
+    assert res_worker_stop.json()["success"] is True

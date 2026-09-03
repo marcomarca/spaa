@@ -48,3 +48,20 @@ def test_segment_chapter_strictly_respects_hard_max():
     for chunk in chunks:
         assert chunk.word_count <= 950, f"Chunk excede límite: {chunk.word_count} palabras"
         assert len(chunk.spoken_text) > 0
+
+
+def test_segment_chapter_micro_chunks():
+    paragraph = (
+        "Esta es una oración representativa de prueba para validar la segmentación determinista del sistema de audiolibros. "
+        * 15
+    )
+    md = f"### Sección 1\n\n{paragraph}\n\n{paragraph}"
+
+    segmenter = MarkdownSegmenter(target_words=100, hard_max_words=110)
+    chapters = segmenter.parse_document(md)
+    chunks = segmenter.segment_chapter(chapters[0])
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert chunk.word_count <= 110, f"Micro-chunk excede límite: {chunk.word_count} palabras"
+        assert len(chunk.spoken_text) > 0

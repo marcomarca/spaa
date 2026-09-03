@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Te
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spaa.adapters.database import Base
+from spaa.domain.models import DEFAULT_QWEN_INSTRUCT
 
 
 def utc_now() -> datetime:
@@ -91,9 +92,10 @@ class TtsChunkModel(Base):
     spoken_text: Mapped[str] = mapped_column(Text, default="")
     word_count: Mapped[int] = mapped_column(Integer, default=0)
     language: Mapped[str] = mapped_column(String(8), default="es")
-    provider: Mapped[str] = mapped_column(String(32), default="f5")
-    model: Mapped[str] = mapped_column(String(64), default="f5_spanish")
-    voice: Mapped[str] = mapped_column(String(64), default="marco")
+    provider: Mapped[str] = mapped_column(String(32), default="qwen")
+    model: Mapped[str] = mapped_column(String(64), default="qwen3-tts-1.7b")
+    voice: Mapped[str] = mapped_column(String(64), default="Ryan")
+    instruct: Mapped[str | None] = mapped_column(Text, nullable=True, default=DEFAULT_QWEN_INSTRUCT)
     status: Mapped[str] = mapped_column(String(32), default="NEW")
     wav_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     wav_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -114,7 +116,7 @@ class TtsJobModel(Base):
         String(36), ForeignKey("tts_chunks.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     status: Mapped[str] = mapped_column(String(32), default="QUEUED")
-    provider: Mapped[str] = mapped_column(String(32), default="f5")
+    provider: Mapped[str] = mapped_column(String(32), default="qwen")
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
