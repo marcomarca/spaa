@@ -21,6 +21,16 @@ class BookResponse(BaseModel):
     created_at: str
 
 
+class ReadyChunkResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    sequence: int
+    duration_seconds: float
+    word_count: int
+    spoken_text: str = ""
+
+
 class ChapterResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,6 +41,11 @@ class ChapterResponse(BaseModel):
     duration_seconds: float
     is_ready: bool
     audio_sha256: Optional[str] = None
+    total_chunks: int = 0
+    ready_chunks_count: int = 0
+    generating_chunks_count: int = 0
+    ready_duration_seconds: float = 0.0
+    ready_chunks: List[ReadyChunkResponse] = []
 
 
 class BookDetailResponse(BookResponse):
@@ -68,18 +83,42 @@ def get_book(book_id: str, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(status_code=404, detail="Libro no encontrado")
 
-    chapters = [
-        ChapterResponse(
-            id=c.id,
-            sequence=c.sequence,
-            title=c.title,
-            word_count=c.word_count,
-            duration_seconds=c.duration_seconds,
-            is_ready=c.is_ready,
-            audio_sha256=c.audio_sha256,
+    chapters: List[ChapterResponse] = []
+    for c in sorted(book.chapters, key=lambda x: x.sequence):
+        c_chunks = getattr(c, "chunks", [])
+        total_chunks = len(c_chunks)
+        ready_chunks_list = [
+            ReadyChunkResponse(
+                id=ch.id,
+                sequence=ch.sequence,
+                duration_seconds=ch.duration_seconds,
+                word_count=ch.word_count,
+                spoken_text=ch.spoken_text[:120] if ch.spoken_text else "",
+            )
+            for ch in sorted(c_chunks, key=lambda x: x.sequence)
+            if ch.status == "READY" and ch.duration_seconds > 0
+        ]
+        ready_count = len(ready_chunks_list)
+        generating_count = sum(1 for ch in c_chunks if ch.status == "GENERATING")
+        ready_duration = sum(ch.duration_seconds for ch in ready_chunks_list)
+        effective_ready_duration = c.duration_seconds if c.is_ready else ready_duration
+
+        chapters.append(
+            ChapterResponse(
+                id=c.id,
+                sequence=c.sequence,
+                title=c.title,
+                word_count=c.word_count,
+                duration_seconds=c.duration_seconds,
+                is_ready=c.is_ready,
+                audio_sha256=c.audio_sha256,
+                total_chunks=total_chunks,
+                ready_chunks_count=ready_count,
+                generating_chunks_count=generating_count,
+                ready_duration_seconds=round(effective_ready_duration, 2),
+                ready_chunks=ready_chunks_list,
+            )
         )
-        for c in sorted(book.chapters, key=lambda x: x.sequence)
-    ]
 
     return BookDetailResponse(
         id=book.id,

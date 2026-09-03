@@ -91,6 +91,10 @@ export class ApiClient {
     return `${this.baseUrl}/api/audio/chapter/${chapterId}`;
   }
 
+  getChunkAudioUrl(chunkId: string): string {
+    return `${this.baseUrl}/api/audio/chunk/${chunkId}`;
+  }
+
   // ==========================================
   // Study & Question Evaluation Endpoints
   // ==========================================

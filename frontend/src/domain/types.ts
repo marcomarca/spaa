@@ -4,6 +4,14 @@ export type LoadState<T> =
   | { status: "success"; data: T }
   | { status: "error"; error: string };
 
+export interface ReadyChunkInfo {
+  id: string;
+  sequence: number;
+  duration_seconds: number;
+  word_count: number;
+  spoken_text?: string;
+}
+
 export interface Chapter {
   id: string;
   sequence: number;
@@ -12,6 +20,24 @@ export interface Chapter {
   duration_seconds: float;
   is_ready: boolean;
   audio_sha256?: string | null;
+  total_chunks?: number;
+  ready_chunks_count?: number;
+  generating_chunks_count?: number;
+  ready_duration_seconds?: number;
+  ready_chunks?: ReadyChunkInfo[];
+}
+
+export interface PlayableTrack {
+  id: string;
+  type: "chapter" | "chunk";
+  chapterId: string;
+  chapterTitle: string;
+  chapterSequence: number;
+  chunkSequence?: number;
+  title: string;
+  subtitle: string;
+  durationSeconds: number;
+  audioUrl: string;
 }
 
 export type float = number;

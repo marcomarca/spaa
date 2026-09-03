@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from spaa.adapters.database import get_db
 from spaa.adapters.db_models import ChapterModel
-from spaa.adapters.repositories import ChapterRepository
+from spaa.adapters.repositories import ChapterRepository, TtsChunkRepository
 
 router = APIRouter(prefix="/api/audio", tags=["Audio & Offline Downloads"])
 
@@ -35,6 +35,32 @@ def stream_chapter_audio(chapter_id: str, db: Session = Depends(get_db)):
         path=str(audio_file),
         media_type="audio/mpeg",
         filename=f"chapter_{chapter.sequence:03d}.mp3",
+        headers=headers,
+    )
+
+
+@router.get("/chunk/{chunk_id}")
+def stream_chunk_audio(chunk_id: str, db: Session = Depends(get_db)):
+    repo = TtsChunkRepository(db)
+    chunk = repo.get(chunk_id)
+    if not chunk or not chunk.wav_path:
+        raise HTTPException(status_code=404, detail="Audio de bloque no encontrado o no generado")
+
+    audio_file = Path(chunk.wav_path)
+    if not audio_file.exists():
+        raise HTTPException(status_code=404, detail="Archivo físico de audio no encontrado")
+
+    headers = {
+        "X-Audio-SHA256": chunk.wav_sha256 or "",
+        "X-Chunk-Sequence": str(chunk.sequence),
+        "X-Duration-Seconds": str(chunk.duration_seconds),
+        "Accept-Ranges": "bytes",
+    }
+
+    return FileResponse(
+        path=str(audio_file),
+        media_type="audio/wav",
+        filename=f"chunk_{chunk.sequence:03d}.wav",
         headers=headers,
     )
 

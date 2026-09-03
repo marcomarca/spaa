@@ -136,9 +136,11 @@ export function App() {
           <TransportPlayer
             currentBook={activeBook}
             currentChapter={activeChapter}
+            onSelectChapter={handleSelectChapter}
             onOpenStudy={() => setActiveTab("study")}
           />
         )}
+
         {activeTab === "library" && (
           <LibraryView
             books={books}

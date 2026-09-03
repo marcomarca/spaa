@@ -163,3 +163,40 @@ def test_queue_monitor_and_logs(client: TestClient):
     res_worker_stop = client.post("/api/queue/worker/stop")
     assert res_worker_stop.status_code == 200
     assert res_worker_stop.json()["success"] is True
+
+
+def test_stream_chunk_audio(client: TestClient, tmp_path):
+    # Test 404 for non-existent chunk
+    res_404 = client.get("/api/audio/chunk/non-existent-chunk")
+    assert res_404.status_code == 404
+
+    # Create dummy wav file and register chunk in DB
+    dummy_wav = tmp_path / "test_chunk.wav"
+    dummy_wav.write_bytes(b"RIFF....WAVEfmt ....data....")
+
+    from spaa.adapters.database import get_db
+    from spaa.adapters.db_models import BookModel, ChapterModel, TtsChunkModel
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+
+    book = BookModel(id="b-1", title="B1", author="A1")
+    chap = ChapterModel(id="c-1", book_id="b-1", variant_id="v-1", sequence=1, title="Cap 1")
+    chunk = TtsChunkModel(
+        id="chk-100",
+        book_id="b-1",
+        variant_id="v-1",
+        chapter_id="c-1",
+        sequence=1,
+        status="READY",
+        wav_path=str(dummy_wav),
+        duration_seconds=5.0,
+    )
+    db.add_all([book, chap, chunk])
+    db.commit()
+
+    # Stream chunk
+    res = client.get("/api/audio/chunk/chk-100")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "audio/wav"
+    assert res.headers["x-chunk-sequence"] == "1"
