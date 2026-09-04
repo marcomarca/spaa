@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -48,7 +49,36 @@ def stream_chunk_audio(chunk_id: str, db: Session = Depends(get_db)):
 
     audio_file = Path(chunk.wav_path)
     if not audio_file.exists():
-        raise HTTPException(status_code=404, detail="Archivo físico de audio no encontrado")
+        chap_repo = ChapterRepository(db)
+        chapter = chap_repo.get(chunk.chapter_id)
+        if chapter and chapter.audio_path and Path(chapter.audio_path).exists():
+            # Si el bloque ya fue compilado en el MP3 del capítulo, extraer el fragmento para preview
+            all_chunks = repo.list_by_chapter(chunk.chapter_id)
+            start_offset = sum(c.duration_seconds for c in all_chunks if c.sequence < chunk.sequence)
+            duration = chunk.duration_seconds if chunk.duration_seconds > 0 else 30.0
+
+            audio_file.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(start_offset),
+                    "-t",
+                    str(duration),
+                    "-i",
+                    str(chapter.audio_path),
+                    "-ar",
+                    "24000",
+                    "-ac",
+                    "1",
+                    str(audio_file),
+                ]
+                subprocess.run(cmd, capture_output=True, check=True)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error al extraer segmento de audio: {e}")
+        else:
+            raise HTTPException(status_code=404, detail="Archivo físico de audio no encontrado")
 
     headers = {
         "X-Audio-SHA256": chunk.wav_sha256 or "",

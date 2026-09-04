@@ -7,6 +7,7 @@ import {
   FileText,
   Filter,
   Layers,
+  Pause,
   Play,
   PlayCircle,
   RefreshCw,
@@ -25,6 +26,13 @@ import type {
   WorkerProcessStatus,
 } from "../domain/types";
 import { api } from "../services/api";
+
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
 
 interface MonitorViewProps {
   books: Book[];
@@ -45,6 +53,162 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
   const [workerProcess, setWorkerProcess] = useState<WorkerProcessStatus | null>(null);
   const [isTogglingWorker, setIsTogglingWorker] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Audio preview playback states & ref
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
+  const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Robust audio teardown helper (releases decoders, locks, and network streams)
+  const stopAndCleanupAudio = useCallback(() => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
+      } catch (err) {
+        console.warn("Error during audio cleanup:", err);
+      }
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setAudioDuration(0);
+    setIsAudioLoading(false);
+    setAudioError(null);
+  }, []);
+
+  // Modal closure handler with guaranteed audio teardown
+  const handleCloseModal = useCallback(() => {
+    stopAndCleanupAudio();
+    setSelectedChunk(null);
+  }, [stopAndCleanupAudio]);
+
+  // Teardown audio on component unmount
+  useEffect(() => {
+    return () => {
+      stopAndCleanupAudio();
+    };
+  }, [stopAndCleanupAudio]);
+
+  // Handle chunk selection & automatic audio preview
+  useEffect(() => {
+    stopAndCleanupAudio();
+
+    if (!selectedChunk || selectedChunk.status !== "READY") {
+      return;
+    }
+
+    const audioUrl = api.getChunkAudioUrl(selectedChunk.id);
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+    setIsAudioLoading(true);
+    setAudioError(null);
+    setAudioDuration(selectedChunk.duration_seconds || 0);
+
+    const onLoadedMetadata = () => {
+      if (audio.duration && Number.isFinite(audio.duration)) {
+        setAudioDuration(audio.duration);
+      }
+    };
+
+    const onTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+
+    const onCanPlay = () => {
+      setIsAudioLoading(false);
+    };
+
+    const onPlaying = () => {
+      setIsPlaying(true);
+      setIsAudioLoading(false);
+    };
+
+    const onPause = () => {
+      setIsPlaying(false);
+    };
+
+    const onEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    const onError = () => {
+      setIsAudioLoading(false);
+      setIsPlaying(false);
+      setAudioError("Archivo de audio no disponible en servidor o error de decodificación.");
+    };
+
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("canplay", onCanPlay);
+    audio.addEventListener("playing", onPlaying);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
+
+    // Auto-play audio preview immediately
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((err) => {
+        console.warn("Autoplay bloqueado o abortado:", err);
+        setIsPlaying(false);
+        setIsAudioLoading(false);
+      });
+    }
+
+    return () => {
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("canplay", onCanPlay);
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.removeAttribute("src");
+        audio.load();
+      } catch {}
+      if (audioRef.current === audio) {
+        audioRef.current = null;
+      }
+    };
+  }, [selectedChunk, stopAndCleanupAudio]);
+
+  const handleTogglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play().catch((err) => {
+        console.error("Error al reproducir audio:", err);
+        setAudioError("Error al iniciar reproducción.");
+      });
+    } else {
+      audio.pause();
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = Number.parseFloat(e.target.value);
+    setCurrentTime(newTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    }
+  };
+
+  const handleRestartAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch((err) => console.warn("Error restarting audio:", err));
+    }
+  };
 
   // Sync selectedBookId with activeBook if changed
   useEffect(() => {
@@ -516,12 +680,22 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
                         <div className="chunk-tile-body">
                           <span className="chunk-words">{chunk.word_count} palabras</span>
                           {isReady && chunk.duration_seconds > 0 && (
-                            <span className="chunk-duration">{chunk.duration_seconds}s</span>
+                            <span className="chunk-duration" title="Audio listo para escuchar">
+                              <Volume2 size={11} className="inline-duration-icon" />
+                              {chunk.duration_seconds}s
+                            </span>
                           )}
                         </div>
 
                         {chunk.spoken_preview && (
                           <div className="chunk-preview-snippet">"{chunk.spoken_preview}..."</div>
+                        )}
+
+                        {isReady && (
+                          <div className="chunk-audio-badge">
+                            <Play size={10} className="play-icon-tiny" />
+                            <span>Escuchar preview</span>
+                          </div>
                         )}
 
                         {isError && (
@@ -625,14 +799,21 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
       )}
 
       {/* ============================================================ */}
-      {/* MODAL DE DETALLE DEL BLOQUE (INSPECCIÓN VISUAL)               */}
+      {/* MODAL DE DETALLE DEL BLOQUE (INSPECCIÓN VISUAL & QA AUDIO)   */}
       {/* ============================================================ */}
       {selectedChunk && (
         <dialog
           open
           className="modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCloseModal();
+            }
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setSelectedChunk(null);
+            if (e.key === "Escape") {
+              handleCloseModal();
+            }
           }}
         >
           <div className="chunk-modal">
@@ -646,7 +827,8 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
               <button
                 type="button"
                 className="modal-close-btn"
-                onClick={() => setSelectedChunk(null)}
+                onClick={handleCloseModal}
+                title="Cerrar modal"
               >
                 <X size={18} />
               </button>
@@ -690,6 +872,109 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
                 )}
               </div>
 
+              {/* Media Preview de Audio para QA */}
+              <div className="modal-audio-player-card">
+                <div className="audio-player-header">
+                  <div className="audio-player-title">
+                    <Volume2 size={16} className="text-primary" />
+                    <span>Auditoría de Audio (Media Preview)</span>
+                  </div>
+                  <div className="audio-player-status-badge">
+                    {selectedChunk.status === "READY" ? (
+                      isAudioLoading ? (
+                        <span className="audio-status-pill loading">Cargando...</span>
+                      ) : isPlaying ? (
+                        <span className="audio-status-pill playing">
+                          <span className="pulse-indicator" /> Reproduciendo
+                        </span>
+                      ) : (
+                        <span className="audio-status-pill paused">En pausa</span>
+                      )
+                    ) : (
+                      <span className="audio-status-pill not-ready">Audio aún no sintetizado</span>
+                    )}
+                  </div>
+                </div>
+
+                {selectedChunk.status === "READY" ? (
+                  <div className="audio-player-controls-wrap">
+                    <div className="audio-player-main-row">
+                      <button
+                        type="button"
+                        className={`audio-main-play-btn ${isPlaying ? "playing" : ""}`}
+                        onClick={handleTogglePlay}
+                        title={isPlaying ? "Pausar audio" : "Reproducir audio"}
+                      >
+                        {isPlaying ? (
+                          <Pause size={18} />
+                        ) : (
+                          <Play size={18} className="play-icon-offset" />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="audio-secondary-ctrl-btn"
+                        onClick={handleRestartAudio}
+                        title="Reiniciar desde el inicio"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+
+                      <div className="audio-slider-container">
+                        <input
+                          type="range"
+                          min="0"
+                          max={
+                            audioDuration > 0
+                              ? audioDuration
+                              : selectedChunk.duration_seconds > 0
+                                ? selectedChunk.duration_seconds
+                                : 100
+                          }
+                          step="0.1"
+                          value={currentTime}
+                          onChange={handleSeek}
+                          className="audio-scrubber-slider"
+                          aria-label="Progreso de reproducción de audio"
+                        />
+                      </div>
+
+                      <div className="audio-time-readout">
+                        <span className="current-time">{formatTime(currentTime)}</span>
+                        <span className="time-sep">/</span>
+                        <span className="total-time">
+                          {formatTime(
+                            audioDuration > 0 ? audioDuration : selectedChunk.duration_seconds,
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {audioError && (
+                      <div className="audio-player-error-banner">
+                        <AlertTriangle size={14} />
+                        <span>{audioError}</span>
+                      </div>
+                    )}
+
+                    <div className="audio-qa-hint">
+                      <span>
+                        Audita la pronunciación y fluidez. Si detectas colapsos fonéticos o fallos,
+                        puedes re-encolar este bloque inmediatamente abajo.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="audio-player-empty-state">
+                    <span>
+                      El archivo de audio estará disponible automáticamente para previsualización
+                      una vez el worker GPU complete la síntesis (estado "Listo").
+                    </span>
+                  </div>
+                )}
+              </div>
+
               {selectedChunk.last_error && (
                 <div className="modal-error-box">
                   <div className="modal-error-title">
@@ -713,8 +998,9 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
                   className="modal-retry-action-btn"
                   onClick={() => {
                     if (selectedChunk.job_id) {
-                      handleRetryJob(selectedChunk.job_id);
-                      setSelectedChunk(null);
+                      const jId = selectedChunk.job_id;
+                      handleCloseModal();
+                      handleRetryJob(jId);
                     }
                   }}
                 >
@@ -726,11 +1012,7 @@ export function MonitorView({ books, activeBook }: MonitorViewProps) {
                   </span>
                 </button>
               )}
-              <button
-                type="button"
-                className="modal-secondary-btn"
-                onClick={() => setSelectedChunk(null)}
-              >
+              <button type="button" className="modal-secondary-btn" onClick={handleCloseModal}>
                 Cerrar
               </button>
             </div>

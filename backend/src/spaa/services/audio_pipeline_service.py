@@ -124,10 +124,8 @@ class AudioPipelineService:
                 duration=probe_mp3.duration_seconds,
             )
 
-            # Cleanup temporary WAVs
-            for p in wav_paths:
-                self.storage.cleanup_temporary_wav(p)
-
+            # Retain chunk WAVs for visual QA and monitoring preview in dashboard
+            # (permits immediate preview without re-slicing)
             return True
         except Exception:
             self.db.rollback()
