@@ -6,6 +6,7 @@ const backendPort = process.env.VITE_BACKEND_PORT || "8009";
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: "0.0.0.0",
     port: 5180,
     strictPort: false,
     proxy: {

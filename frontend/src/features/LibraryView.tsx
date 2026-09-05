@@ -1,7 +1,17 @@
-import { BookOpen, CheckCircle2, Clock, Plus, Volume2 } from "lucide-react";
-import { useState } from "react";
+import {
+  BookOpen,
+  CheckCircle2,
+  Clock,
+  Download,
+  HardDriveDownload,
+  Loader2,
+  Plus,
+  Volume2,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import type { Book, Chapter } from "../domain/types";
 import { api } from "../services/api";
+import { OfflineAudioCache } from "../services/offlineAudioCache";
 
 interface LibraryViewProps {
   books: Book[];
@@ -23,6 +33,51 @@ export function LibraryView({
   const [author, setAuthor] = useState("");
   const [markdown, setMarkdown] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cachedChapterIds, setCachedChapterIds] = useState<Set<string>>(new Set());
+  const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+
+  const refreshCached = useCallback(async () => {
+    const ids = await OfflineAudioCache.listCachedChapterIds();
+    setCachedChapterIds(new Set(ids));
+  }, []);
+
+  useEffect(() => {
+    refreshCached();
+  }, [refreshCached]);
+
+  const handleDownloadBookOffline = async (book: Book) => {
+    if (!book.chapters || downloadingBookId) return;
+    const readyChapters = book.chapters.filter((c) => c.is_ready);
+    if (readyChapters.length === 0) {
+      alert("No hay capítulos completados y listos para descargar en este libro.");
+      return;
+    }
+
+    setDownloadingBookId(book.id);
+    setDownloadProgress(0);
+
+    let successCount = 0;
+    for (let i = 0; i < readyChapters.length; i++) {
+      const chap = readyChapters[i];
+      const res = await OfflineAudioCache.downloadChapter(
+        chap.id,
+        api.getChapterAudioUrl(chap.id),
+        chap.audio_sha256 || undefined,
+        (p) => {
+          const overall = Math.round(((i + p.percent / 100) / readyChapters.length) * 100);
+          setDownloadProgress(overall);
+        },
+      );
+      if (res.success) successCount++;
+    }
+
+    setDownloadingBookId(null);
+    await refreshCached();
+    alert(
+      `Descarga completada: ${successCount} de ${readyChapters.length} capítulos guardados para escuchar offline.`,
+    );
+  };
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,7 +164,43 @@ export function LibraryView({
               }}
             >
               <h3 style={{ fontSize: "1.1rem" }}>{b.title}</h3>
-              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{b.author}</span>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{b.author}</span>
+                {b.chapters?.some((c) => c.is_ready) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadBookOffline(b);
+                    }}
+                    disabled={downloadingBookId === b.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "4px 8px",
+                      borderRadius: "6px",
+                      backgroundColor: "rgba(59, 130, 246, 0.15)",
+                      color: "#60a5fa",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                    title="Descargar todos los capítulos listos para escuchar sin internet"
+                  >
+                    {downloadingBookId === b.id ? (
+                      <>
+                        <Loader2 size={12} className="spin-slow" />
+                        <span>{downloadProgress}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download size={12} />
+                        <span>Descargar Libro</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
 
             {b.chapters && b.chapters.length > 0 && (
@@ -118,6 +209,7 @@ export function LibraryView({
               >
                 {b.chapters.map((c) => {
                   const isSelected = activeBook?.id === b.id && activeChapter?.id === c.id;
+                  const isCached = cachedChapterIds.has(c.id);
                   return (
                     <button
                       key={c.id}
@@ -152,6 +244,19 @@ export function LibraryView({
                           color: "#94a3b8",
                         }}
                       >
+                        {isCached && (
+                          <span
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "3px",
+                              color: "#10b981",
+                            }}
+                            title="Descargado offline"
+                          >
+                            <HardDriveDownload size={13} />
+                          </span>
+                        )}
                         <span>{c.word_count} palabras</span>
                         {c.is_ready ? (
                           <CheckCircle2 size={14} color="#10b981" />

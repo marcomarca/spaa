@@ -11,15 +11,20 @@
     "test": "bun test",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "check": "bun run typecheck && bun run lint && bun test"
+    "check": "bun run typecheck && bun run lint && bun test",
+    "cap:sync": "cap sync android",
+    "cap:build": "bun run build && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@capacitor/cli": "^8.5.1",
     "@types/bun": "^1.2.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

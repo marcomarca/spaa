@@ -4,7 +4,9 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Download,
   FastForward,
+  HardDriveDownload,
   ListMusic,
   Loader2,
   Music,
@@ -14,12 +16,16 @@ import {
   SkipBack,
   SkipForward,
   Sparkles,
+  Trash2,
   Volume2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Book, Chapter, PlayableTrack, ReadyChunkInfo } from "../domain/types";
 import { api } from "../services/api";
+import { MediaSessionManager } from "../services/mediaSession";
+import { OfflineAudioCache } from "../services/offlineAudioCache";
 import { LocalStorageAdapter } from "../services/storage";
+import { WakeLockManager } from "../services/wakeLock";
 
 interface TransportPlayerProps {
   currentBook: Book | null;
@@ -43,6 +49,11 @@ export function TransportPlayer({
   );
   const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const [activeTrack, setActiveTrack] = useState<PlayableTrack | null>(null);
+  const [effectiveAudioSrc, setEffectiveAudioSrc] = useState<string>("");
+  const [isOfflineCached, setIsOfflineCached] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [cachedChapterIds, setCachedChapterIds] = useState<Set<string>>(new Set());
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -120,6 +131,48 @@ export function TransportPlayer({
     }
   }, [currentChapter, allPlayableTracks, activeTrack]);
 
+  // Load list of cached chapter IDs for offline playback indicators
+  const refreshCachedChapters = useCallback(async () => {
+    const ids = await OfflineAudioCache.listCachedChapterIds();
+    setCachedChapterIds(new Set(ids));
+  }, []);
+
+  useEffect(() => {
+    refreshCachedChapters();
+  }, [refreshCachedChapters]);
+
+  // Resolve audio source (check offline CacheStorage first)
+  useEffect(() => {
+    if (!activeTrack) {
+      setEffectiveAudioSrc("");
+      setIsOfflineCached(false);
+      return;
+    }
+
+    let isMounted = true;
+    const resolveSource = async () => {
+      const isCached = await OfflineAudioCache.isChapterCached(activeTrack.chapterId);
+      if (!isMounted) return;
+      setIsOfflineCached(isCached);
+
+      if (isCached && activeTrack.type === "chapter") {
+        const cachedUrl = await OfflineAudioCache.getCachedAudioUrl(activeTrack.chapterId);
+        if (isMounted && cachedUrl) {
+          setEffectiveAudioSrc(cachedUrl);
+          return;
+        }
+      }
+      if (isMounted) {
+        setEffectiveAudioSrc(activeTrack.audioUrl);
+      }
+    };
+
+    resolveSource();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTrack]);
+
   // Apply speed changes to audioRef
   useEffect(() => {
     if (audioRef.current) {
@@ -128,7 +181,7 @@ export function TransportPlayer({
   }, [speed]);
 
   // Play / Pause toggle
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     if (!audioRef.current || !activeTrack) return;
 
     if (isPlaying) {
@@ -138,7 +191,23 @@ export function TransportPlayer({
       audioRef.current.play().catch(() => setIsPlaying(false));
       setIsPlaying(true);
     }
-  };
+  }, [isPlaying, activeTrack]);
+
+  // Relative seek
+  const seekRelative = useCallback(
+    (seconds: number) => {
+      if (audioRef.current) {
+        const targetDuration = duration > 0 ? duration : activeTrack?.durationSeconds || 100;
+        const newPos = Math.max(
+          0,
+          Math.min(targetDuration, audioRef.current.currentTime + seconds),
+        );
+        audioRef.current.currentTime = newPos;
+        setCurrentTime(newPos);
+      }
+    },
+    [duration, activeTrack],
+  );
 
   // Play a specific track
   const handlePlayTrack = useCallback(
@@ -174,11 +243,11 @@ export function TransportPlayer({
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < allPlayableTracks.length - 1;
 
-  const handlePrevTrack = () => {
+  const handlePrevTrack = useCallback(() => {
     if (hasPrev) {
       handlePlayTrack(allPlayableTracks[currentIndex - 1]);
     }
-  };
+  }, [hasPrev, currentIndex, allPlayableTracks, handlePlayTrack]);
 
   const handleNextTrack = useCallback(() => {
     if (hasNext) {
@@ -186,14 +255,55 @@ export function TransportPlayer({
     }
   }, [hasNext, currentIndex, allPlayableTracks, handlePlayTrack]);
 
-  // Relative seek
-  const seekRelative = (seconds: number) => {
-    if (audioRef.current) {
-      const newPos = Math.max(0, Math.min(duration, audioRef.current.currentTime + seconds));
-      audioRef.current.currentTime = newPos;
-      setCurrentTime(newPos);
+  // Synchronize MediaSession metadata & lockscreen/headset controls
+  useEffect(() => {
+    if (!activeTrack) {
+      MediaSessionManager.clear();
+      return;
     }
-  };
+
+    MediaSessionManager.setMetadata({
+      title: activeTrack.title,
+      artist: currentBook?.author || "SPAA",
+      album: currentBook?.title || "SPAA Audiolibros",
+    });
+
+    MediaSessionManager.setActionHandlers({
+      onPlay: () => {
+        if (audioRef.current) {
+          audioRef.current.play().catch(() => setIsPlaying(false));
+          setIsPlaying(true);
+        }
+      },
+      onPause: () => {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        }
+      },
+      onSeekBackward: () => seekRelative(-15),
+      onSeekForward: () => seekRelative(30),
+      onPreviousTrack: hasPrev ? handlePrevTrack : undefined,
+      onNextTrack: hasNext ? handleNextTrack : undefined,
+      onSeekTo: (details) => {
+        if (typeof details.seekTime === "number" && audioRef.current) {
+          audioRef.current.currentTime = details.seekTime;
+          setCurrentTime(details.seekTime);
+        }
+      },
+    });
+  }, [activeTrack, currentBook, hasPrev, hasNext, handlePrevTrack, handleNextTrack, seekRelative]);
+
+  // Synchronize WakeLock & playbackState with isPlaying
+  useEffect(() => {
+    if (isPlaying) {
+      WakeLockManager.request();
+      MediaSessionManager.setPlaybackState("playing");
+    } else {
+      WakeLockManager.release();
+      MediaSessionManager.setPlaybackState("paused");
+    }
+  }, [isPlaying]);
 
   // Slider scrub seek
   const handleSeekScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,6 +349,42 @@ export function TransportPlayer({
     setTimeout(() => setBookmarkSaved(false), 2000);
   };
 
+  // Offline Download Handler
+  const handleDownloadChapter = async () => {
+    if (!activeTrack || activeTrack.type !== "chapter" || isDownloading) return;
+    setIsDownloading(true);
+    setDownloadProgress(0);
+
+    const expectedSha256 =
+      currentBook?.chapters?.find((c) => c.id === activeTrack.chapterId)?.audio_sha256 || undefined;
+
+    const res = await OfflineAudioCache.downloadChapter(
+      activeTrack.chapterId,
+      activeTrack.audioUrl,
+      expectedSha256,
+      (p) => setDownloadProgress(p.percent),
+    );
+
+    setIsDownloading(false);
+    if (res.success) {
+      setIsOfflineCached(true);
+      await refreshCachedChapters();
+      const cachedUrl = await OfflineAudioCache.getCachedAudioUrl(activeTrack.chapterId);
+      if (cachedUrl) setEffectiveAudioSrc(cachedUrl);
+    } else {
+      alert(res.error || "Error al descargar el capítulo para escuchar offline.");
+    }
+  };
+
+  const handleDeleteCachedChapter = async (chapId: string) => {
+    await OfflineAudioCache.deleteCachedChapter(chapId);
+    if (activeTrack?.chapterId === chapId) {
+      setIsOfflineCached(false);
+      setEffectiveAudioSrc(activeTrack.audioUrl);
+    }
+    await refreshCachedChapters();
+  };
+
   const toggleExpandChapter = (chapId: string) => {
     setExpandedChapters((prev) => ({
       ...prev,
@@ -248,14 +394,20 @@ export function TransportPlayer({
 
   return (
     <div className="player-layout">
-      {/* Audio element connected to active track */}
+      {/* Audio element connected to active track (uses offline cache if available) */}
       {activeTrack && (
         <audio
           ref={audioRef}
-          src={activeTrack.audioUrl}
+          src={effectiveAudioSrc || activeTrack.audioUrl}
           onTimeUpdate={() => {
             if (audioRef.current) {
-              setCurrentTime(audioRef.current.currentTime);
+              const cur = audioRef.current.currentTime;
+              setCurrentTime(cur);
+              MediaSessionManager.setPositionState({
+                duration: duration > 0 ? duration : activeTrack.durationSeconds,
+                position: cur,
+                playbackRate: speed,
+              });
             }
           }}
           onLoadedMetadata={() => {
@@ -265,6 +417,8 @@ export function TransportPlayer({
           }}
           onEnded={() => {
             setIsPlaying(false);
+            WakeLockManager.release();
+            MediaSessionManager.setPlaybackState("none");
             if (hasNext) {
               handleNextTrack();
             }
@@ -289,6 +443,14 @@ export function TransportPlayer({
               </span>
             ) : (
               <span className="badge-tag idle">Sin audio activo</span>
+            )}
+            {activeTrack?.type === "chapter" && isOfflineCached && (
+              <span
+                className="badge-tag offline-ready"
+                title="Guardado localmente en este smartphone"
+              >
+                <HardDriveDownload size={12} /> Offline
+              </span>
             )}
             {isPlaying && <span className="pulse-dot" title="Reproduciendo audio" />}
           </div>
@@ -403,6 +565,38 @@ export function TransportPlayer({
           <button type="button" className="action-btn" onClick={onOpenStudy}>
             <Sparkles size={18} /> Study
           </button>
+          {activeTrack?.type === "chapter" &&
+            (isOfflineCached ? (
+              <button
+                type="button"
+                className="action-btn"
+                onClick={() => handleDeleteCachedChapter(activeTrack.chapterId)}
+                title="Eliminar de la memoria del smartphone"
+              >
+                <Trash2 size={18} color="#ef4444" />
+                <span style={{ color: "#ef4444" }}>Borrar</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="action-btn"
+                onClick={handleDownloadChapter}
+                disabled={isDownloading}
+                title="Descargar este capítulo para escuchar sin internet"
+              >
+                {isDownloading ? (
+                  <>
+                    <Loader2 size={18} className="spin-slow" />
+                    <span>{downloadProgress}%</span>
+                  </>
+                ) : (
+                  <>
+                    <Download size={18} />
+                    <span>Offline</span>
+                  </>
+                )}
+              </button>
+            ))}
         </div>
       </div>
 
@@ -457,6 +651,14 @@ export function TransportPlayer({
                       ) : (
                         <span className="pill pill-gray">
                           <Clock size={13} /> En cola ({chap.total_chunks || 0} bloques)
+                        </span>
+                      )}
+                      {cachedChapterIds.has(chap.id) && (
+                        <span
+                          className="pill pill-green"
+                          title="Descargado para escuchar sin conexión"
+                        >
+                          <HardDriveDownload size={12} /> Offline
                         </span>
                       )}
                       <span className="pill pill-words">{chap.word_count} palabras</span>

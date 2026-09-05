@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SPAA</string>
+    <string name="title_activity_main">SPAA</string>
+    <string name="package_name">com.spaa.app</string>
+    <string name="custom_url_scheme">com.spaa.app</string>
+</resources>
