@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Bookmark,
   CheckCircle2,
   ChevronDown,
@@ -55,6 +56,7 @@ export function TransportPlayer({
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [cachedChapterIds, setCachedChapterIds] = useState<Set<string>>(new Set());
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const availableSpeeds = [0.8, 1.0, 1.2, 1.4, 1.6, 2.0, 2.5, 3.0];
@@ -141,7 +143,7 @@ export function TransportPlayer({
     refreshCachedChapters();
   }, [refreshCachedChapters]);
 
-  // Resolve audio source (check offline CacheStorage first)
+  // Resolve audio source (check offline IndexedDB / CacheStorage first)
   useEffect(() => {
     if (!activeTrack) {
       setEffectiveAudioSrc("");
@@ -180,16 +182,38 @@ export function TransportPlayer({
     }
   }, [speed]);
 
-  // Play / Pause toggle
-  const togglePlay = useCallback(() => {
+  // Play / Pause toggle with detector diagnostics
+  const togglePlay = useCallback(async () => {
     if (!audioRef.current || !activeTrack) return;
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play().catch(() => setIsPlaying(false));
-      setIsPlaying(true);
+      setPlaybackError(null);
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch (err) {
+        console.warn("[TransportPlayer] Playback failed:", err);
+        setIsPlaying(false);
+        if (activeTrack.type === "chapter") {
+          const audit = await OfflineAudioCache.auditChapter(activeTrack.chapterId);
+          if (!audit.isValidAudio && audit.status !== "MISSING") {
+            setPlaybackError(`Error de audio local: ${audit.errorMessage || "Archivo dañado."}`);
+          } else if (audit.status === "MISSING") {
+            setPlaybackError(
+              "Sin conexión: Este capítulo no está descargado para escuchar offline.",
+            );
+          } else {
+            setPlaybackError(
+              "No se pudo iniciar la reproducción. Verifica la conexión con el servidor.",
+            );
+          }
+        } else {
+          setPlaybackError("No se pudo reproducir el micro-bloque de audio.");
+        }
+      }
     }
   }, [isPlaying, activeTrack]);
 
@@ -209,12 +233,12 @@ export function TransportPlayer({
     [duration, activeTrack],
   );
 
-  // Play a specific track
+  // Play a specific track with verified offline resolution
   const handlePlayTrack = useCallback(
-    (track: PlayableTrack) => {
+    async (track: PlayableTrack) => {
       setActiveTrack(track);
       setCurrentTime(0);
-      setIsPlaying(true);
+      setPlaybackError(null);
 
       // Sync chapter selection with parent
       if (currentBook && onSelectChapter) {
@@ -224,12 +248,45 @@ export function TransportPlayer({
         }
       }
 
-      setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play().catch(() => setIsPlaying(false));
+      // Resolve source synchronously before triggering playback to prevent network failure
+      let resolvedUrl = track.audioUrl;
+      if (track.type === "chapter") {
+        const isCached = await OfflineAudioCache.isChapterCached(track.chapterId);
+        setIsOfflineCached(isCached);
+        if (isCached) {
+          const cachedUrl = await OfflineAudioCache.getCachedAudioUrl(track.chapterId);
+          if (cachedUrl) resolvedUrl = cachedUrl;
         }
-      }, 50);
+      }
+
+      setEffectiveAudioSrc(resolvedUrl);
+
+      if (audioRef.current) {
+        if (audioRef.current.src !== resolvedUrl) {
+          audioRef.current.src = resolvedUrl;
+          audioRef.current.load();
+        }
+        audioRef.current.currentTime = 0;
+        try {
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } catch (err) {
+          console.warn("[TransportPlayer] handlePlayTrack play failed:", err);
+          setIsPlaying(false);
+          if (track.type === "chapter") {
+            const audit = await OfflineAudioCache.auditChapter(track.chapterId);
+            if (!audit.isValidAudio && audit.status !== "MISSING") {
+              setPlaybackError(
+                `Audio local dañado: ${audit.errorMessage || "Archivo no legible."}`,
+              );
+            } else if (audit.status === "MISSING") {
+              setPlaybackError("Sin conexión: Este capítulo no está descargado localmente.");
+            } else {
+              setPlaybackError("No se pudo iniciar la reproducción.");
+            }
+          }
+        }
+      }
     },
     [currentBook, onSelectChapter],
   );
@@ -354,6 +411,7 @@ export function TransportPlayer({
     if (!activeTrack || activeTrack.type !== "chapter" || isDownloading) return;
     setIsDownloading(true);
     setDownloadProgress(0);
+    setPlaybackError(null);
 
     const expectedSha256 =
       currentBook?.chapters?.find((c) => c.id === activeTrack.chapterId)?.audio_sha256 || undefined;
@@ -371,8 +429,11 @@ export function TransportPlayer({
       await refreshCachedChapters();
       const cachedUrl = await OfflineAudioCache.getCachedAudioUrl(activeTrack.chapterId);
       if (cachedUrl) setEffectiveAudioSrc(cachedUrl);
+      setPlaybackError(null);
     } else {
-      alert(res.error || "Error al descargar el capítulo para escuchar offline.");
+      const msg = res.error || "Error al descargar el capítulo para escuchar offline.";
+      setPlaybackError(msg);
+      alert(msg);
     }
   };
 
@@ -399,6 +460,26 @@ export function TransportPlayer({
         <audio
           ref={audioRef}
           src={effectiveAudioSrc || activeTrack.audioUrl}
+          onError={async (e) => {
+            console.error("[TransportPlayer] Audio element error:", e);
+            setIsPlaying(false);
+            if (activeTrack?.type === "chapter") {
+              const audit = await OfflineAudioCache.auditChapter(activeTrack.chapterId);
+              if (!audit.isValidAudio && audit.status !== "MISSING") {
+                setPlaybackError(
+                  `Fallo en archivo local: ${audit.errorMessage || "Audio corrupto o incompleto."}`,
+                );
+              } else if (audit.status === "MISSING") {
+                setPlaybackError("Sin conexión: Este capítulo no está descargado localmente.");
+              } else {
+                setPlaybackError(
+                  "Error de reproducción. Verifica la integridad en la pestaña de Biblioteca.",
+                );
+              }
+            } else {
+              setPlaybackError("Error al reproducir el micro-bloque de audio.");
+            }
+          }}
           onTimeUpdate={() => {
             if (audioRef.current) {
               const cur = audioRef.current.currentTime;
@@ -461,6 +542,42 @@ export function TransportPlayer({
           </p>
           {activeTrack?.subtitle && activeTrack.type === "chunk" && (
             <p className="transport-spoken-preview">"{activeTrack.subtitle.slice(0, 110)}..."</p>
+          )}
+
+          {playbackError && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                backgroundColor: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                marginTop: "10px",
+                color: "#f87171",
+                fontSize: "0.82rem",
+                gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                <span>{playbackError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlaybackError(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#f87171",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                }}
+              >
+                ✕
+              </button>
+            </div>
           )}
         </div>
 

@@ -5,13 +5,8 @@ const config: CapacitorConfig = {
   appName: "SPAA",
   webDir: "dist",
   server: {
-    androidScheme: "https",
+    androidScheme: "http",
     cleartext: true,
-  },
-  plugins: {
-    CapacitorHttp: {
-      enabled: true,
-    },
   },
 };
 

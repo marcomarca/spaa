@@ -24,3 +24,21 @@ test("OfflineAudioCache gracefully handles missing CacheStorage in unit test env
   const size = await OfflineAudioCache.getCachedStorageSize();
   expect(typeof size).toBe("number");
 });
+
+test("OfflineAudioCache auditChapter returns MISSING for un-downloaded chapter", async () => {
+  const audit = await OfflineAudioCache.auditChapter("chap-unknown-123");
+  expect(audit.status).toBe("MISSING");
+  expect(audit.isValidAudio).toBe(false);
+  expect(audit.byteLength).toBe(0);
+});
+
+test("OfflineAudioCache auditAllChapters audits list of chapters", async () => {
+  const known = [
+    { id: "chap-1", title: "Capítulo 1" },
+    { id: "chap-2", title: "Capítulo 2" },
+  ];
+  const audits = await OfflineAudioCache.auditAllChapters(known);
+  expect(audits.length).toBe(2);
+  expect(audits[0].chapterId).toBe("chap-1");
+  expect(audits[0].status).toBe("MISSING");
+});

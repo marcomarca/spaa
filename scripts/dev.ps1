@@ -32,12 +32,15 @@ Start-Process pwsh -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\..\ba
 Write-Host "[3/3] ⚛️  Iniciando Frontend en http://0.0.0.0:$frontendPort..." -ForegroundColor Cyan
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\..\frontend'; `$env:VITE_BACKEND_PORT='$backendPort'; Write-Host '--- SPAA Frontend (Vite) ---' -ForegroundColor Cyan; bun run dev --host 0.0.0.0 --port $frontendPort"
 
-$lanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } | Select-Object -First 1).IPAddress
+$lanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.|192\.168\.56\.)' } |
+    Sort-Object -Property @{ Expression = { if ($_.InterfaceAlias -match 'Wi-?Fi') { 0 } else { 1 } } } |
+    Select-Object -First 1).IPAddress
 
 Write-Host "`n✅ Servicios iniciados en terminales dedicadas:" -ForegroundColor Green
 Write-Host "   - Backend API:       http://localhost:$backendPort (Swagger: http://localhost:$backendPort/docs)" -ForegroundColor Gray
 Write-Host "   - Frontend PC:       http://localhost:$frontendPort" -ForegroundColor Gray
 if ($lanIp) {
-    Write-Host "   - Móvil / Wi-Fi:     http://${lanIp}:$frontendPort" -ForegroundColor Yellow
+    Write-Host "   - Móvil / Wi-Fi:     http://${lanIp}:$frontendPort (Backend: http://${lanIp}:$backendPort)" -ForegroundColor Yellow
 }
 Write-Host "   - Extensión:         extension/dist (cargada en Chrome)" -ForegroundColor Gray

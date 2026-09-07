@@ -33,6 +33,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*", "Content-Length", "X-Audio-SHA256", "X-Chapter-Sequence", "X-Duration-Seconds", "Accept-Ranges"],
 )
 
 # Include API Routers

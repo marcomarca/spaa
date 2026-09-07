@@ -4,9 +4,13 @@ import {
   Brain,
   Headphones,
   HelpCircle,
+  Loader2,
+  Server,
+  Settings,
   Sparkles,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { TransportPlayer } from "./components/TransportPlayer";
@@ -30,18 +34,30 @@ export function App() {
   const [syncState, setSyncState] = useState<NetworkSyncState>(syncManager.getState());
   const [offlineHours, setOfflineHours] = useState<number>(12.0);
 
-  useEffect(() => {
-    const unsub = syncManager.subscribe((state) => {
-      setSyncState(state);
-    });
-    syncManager.probeBestConnection();
-    return unsub;
-  }, []);
+  // Server Connection Modal State
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [serverLanUrl, setServerLanUrl] = useState(() => syncManager.getLanUrl());
+  const [serverTailscaleUrl, setServerTailscaleUrl] = useState(() => syncManager.getTailscaleUrl());
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
       const bookList = await api.fetchBooks();
-      setBooks(bookList);
+      // Fetch full details (including chapters) for each book in parallel
+      const detailedBooks = await Promise.all(
+        bookList.map(async (b) => {
+          try {
+            const detailed = await api.fetchBookDetails(b.id);
+            LocalStorageAdapter.saveCachedBookDetails(detailed);
+            return detailed;
+          } catch {
+            return LocalStorageAdapter.getCachedBookDetails(b.id) || b;
+          }
+        }),
+      );
+      setBooks(detailedBooks);
+      LocalStorageAdapter.saveCachedBooks(detailedBooks);
 
       // Load offline buffer manifest
       try {
@@ -53,26 +69,68 @@ export function App() {
 
       // If active book saved, select it
       const savedBookId = LocalStorageAdapter.getActiveBookId();
-      if (savedBookId && bookList.length > 0) {
-        const found = bookList.find((b) => b.id === savedBookId);
-        if (found) {
-          const detailed = await api.fetchBookDetails(found.id);
-          setActiveBook(detailed);
-          if (detailed.chapters && detailed.chapters.length > 0) {
-            setActiveChapter(detailed.chapters[0]);
-          }
-        }
-      } else if (bookList.length > 0) {
-        const detailed = await api.fetchBookDetails(bookList[0].id);
-        setActiveBook(detailed);
-        if (detailed.chapters && detailed.chapters.length > 0) {
-          setActiveChapter(detailed.chapters[0]);
+      const target = savedBookId
+        ? detailedBooks.find((b) => b.id === savedBookId) || detailedBooks[0]
+        : detailedBooks[0];
+
+      if (target) {
+        setActiveBook(target);
+        if (target.chapters && target.chapters.length > 0) {
+          const currentId = activeChapter?.id;
+          const matchingChap = target.chapters.find((c) => c.id === currentId);
+          setActiveChapter(matchingChap || target.chapters[0]);
         }
       }
     } catch {
-      // Offline fallback
+      // Offline fallback: load cached books from local storage
+      const cachedBooks = LocalStorageAdapter.getCachedBooks();
+      if (cachedBooks.length > 0) {
+        setBooks(cachedBooks);
+        const savedBookId = LocalStorageAdapter.getActiveBookId() || cachedBooks[0].id;
+        const cachedDetailed =
+          LocalStorageAdapter.getCachedBookDetails(savedBookId) ||
+          cachedBooks.find((b) => b.id === savedBookId) ||
+          cachedBooks[0];
+        setActiveBook(cachedDetailed);
+        if (cachedDetailed.chapters && cachedDetailed.chapters.length > 0) {
+          setActiveChapter(cachedDetailed.chapters[0]);
+        }
+      }
     }
-  }, []);
+  }, [activeChapter?.id]);
+
+  useEffect(() => {
+    const unsub = syncManager.subscribe((state) => {
+      setSyncState(state);
+    });
+    syncManager.probeBestConnection().then(() => {
+      loadData();
+    });
+    return unsub;
+  }, [loadData]);
+
+  const handleConnectServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsTestingConnection(true);
+    setConnectionMessage(null);
+
+    syncManager.setUrls(serverLanUrl.trim(), serverTailscaleUrl.trim());
+    const bestUrl = await syncManager.probeBestConnection();
+
+    setIsTestingConnection(false);
+    if (bestUrl) {
+      setConnectionMessage(`✓ ¡Conexión exitosa a: ${bestUrl}!`);
+      await loadData();
+      setTimeout(() => {
+        setShowSettingsModal(false);
+        setConnectionMessage(null);
+      }, 1200);
+    } else {
+      setConnectionMessage(
+        "⚠️ No se pudo conectar. Verifica que tu PC esté encendida con .\\scripts\\dev.ps1 y conectada al mismo Wi-Fi.",
+      );
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -107,8 +165,8 @@ export function App() {
             alignItems: "center",
             gap: "6px",
           }}
-          onClick={() => syncManager.probeBestConnection()}
-          title="Haz clic para re-detectar conexión LAN/Tailscale"
+          onClick={() => setShowSettingsModal(true)}
+          title="Configurar conexión con tu PC / Servidor"
         >
           {syncState.isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
           <span>{getStatusLabel()}</span>
@@ -126,8 +184,26 @@ export function App() {
             </span>
           )}
         </button>
-        <div className="buffer-badge">
-          <span>Buffer: {offlineHours.toFixed(1)}h</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div className="buffer-badge">
+            <span>Buffer: {offlineHours.toFixed(1)}h</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSettingsModal(true)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#94a3b8",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              padding: "4px",
+            }}
+            title="Ajustes de Servidor y Conexión"
+          >
+            <Settings size={16} />
+          </button>
         </div>
       </header>
 
@@ -212,6 +288,168 @@ export function App() {
           <span>Workspace</span>
         </button>
       </nav>
+
+      {/* Server Connection Modal */}
+      {showSettingsModal && (
+        <dialog
+          open
+          className="modal-backdrop"
+          aria-label="Conexión con el servidor"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSettingsModal(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowSettingsModal(false);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: "440px",
+              width: "100%",
+              backgroundColor: "#151d30",
+              border: "1px solid #2a3754",
+              borderRadius: "12px",
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "14px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Server size={18} color="#3b82f6" />
+                <h3 style={{ fontSize: "1.05rem", fontWeight: "700" }}>
+                  Conexión con tu PC (SPAA)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p
+              style={{
+                fontSize: "0.8rem",
+                color: "#94a3b8",
+                marginBottom: "16px",
+                lineHeight: 1.4,
+              }}
+            >
+              Para que tu smartphone descargue y sincronice los libros de tu PC, ingresa la IP local
+              de tu computadora en la misma red Wi-Fi.
+            </p>
+
+            <form
+              onSubmit={handleConnectServer}
+              style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+            >
+              <div>
+                <label
+                  htmlFor="server-lan-url"
+                  style={{
+                    display: "block",
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Dirección Wi-Fi / LAN de tu PC
+                </label>
+                <input
+                  id="server-lan-url"
+                  className="input-field"
+                  value={serverLanUrl}
+                  onChange={(e) => setServerLanUrl(e.target.value)}
+                  placeholder="http://192.168.10.73:8009"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="server-tailscale-url"
+                  style={{
+                    display: "block",
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Dirección Tailscale (Opcional)
+                </label>
+                <input
+                  id="server-tailscale-url"
+                  className="input-field"
+                  value={serverTailscaleUrl}
+                  onChange={(e) => setServerTailscaleUrl(e.target.value)}
+                  placeholder="http://100.x.y.z:8009"
+                />
+              </div>
+
+              {connectionMessage && (
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    padding: "8px 10px",
+                    borderRadius: "6px",
+                    backgroundColor: connectionMessage.startsWith("✓")
+                      ? "rgba(16, 185, 129, 0.15)"
+                      : "rgba(239, 68, 68, 0.15)",
+                    color: connectionMessage.startsWith("✓") ? "#10b981" : "#f87171",
+                  }}
+                >
+                  {connectionMessage}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={isTestingConnection}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                  }}
+                >
+                  {isTestingConnection ? (
+                    <>
+                      <Loader2 size={16} className="spin-slow" />
+                      <span>Conectando...</span>
+                    </>
+                  ) : (
+                    <span>Guardar y Conectar</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => setShowSettingsModal(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </form>
+          </div>
+        </dialog>
+      )}
     </div>
   );
 }

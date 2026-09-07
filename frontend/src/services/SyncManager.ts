@@ -17,10 +17,18 @@ export class SyncManager {
 
   private listeners: ((state: NetworkSyncState) => void)[] = [];
 
-  constructor(lanUrl = "http://192.168.1.50:8009", tailscaleUrl = "http://100.100.100.100:8009") {
+  constructor(lanUrl = "http://192.168.10.73:8009", tailscaleUrl = "http://100.100.100.100:8009") {
     this.lanUrl = localStorage.getItem("spaa_lan_url") || lanUrl;
     this.tailscaleUrl = localStorage.getItem("spaa_tailscale_url") || tailscaleUrl;
     this.loadPendingEventsCount();
+  }
+
+  getLanUrl(): string {
+    return this.lanUrl;
+  }
+
+  getTailscaleUrl(): string {
+    return this.tailscaleUrl;
   }
 
   subscribe(listener: (state: NetworkSyncState) => void) {
@@ -50,17 +58,24 @@ export class SyncManager {
   }
 
   async probeBestConnection(): Promise<string> {
-    // 1. Try local proxy / current origin
-    try {
-      const pingRes = await fetch("/health", { signal: AbortSignal.timeout(1200) });
-      if (pingRes.ok) {
-        this.state = { ...this.state, mode: "localhost", activeUrl: "", isOnline: true };
-        api.setBaseUrl("");
-        this.notify();
-        return "";
+    // 1. Try local proxy / current origin only if running in browser web dev mode
+    const isBrowserDevWeb =
+      typeof window !== "undefined" &&
+      window.location.protocol.startsWith("http") &&
+      window.location.port === "5180";
+
+    if (isBrowserDevWeb) {
+      try {
+        const pingRes = await fetch("/health", { signal: AbortSignal.timeout(1200) });
+        if (pingRes.ok) {
+          this.state = { ...this.state, mode: "localhost", activeUrl: "", isOnline: true };
+          api.setBaseUrl("");
+          this.notify();
+          return "";
+        }
+      } catch {
+        // Continue to next probe
       }
-    } catch {
-      // Continue to next probe
     }
 
     // 2. Try LAN URL (1.5s timeout)
